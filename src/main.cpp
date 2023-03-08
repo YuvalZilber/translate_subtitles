@@ -5,7 +5,8 @@
 #include <cstdlib>
 #include <fstream>
 #include <cstdio>
-#include "utils.h"
+#include "../headers/utils.h"
+#include "../headers/font.h"
 #include <regex>
 #include <spawn.h>
 #include <chrono>
@@ -22,7 +23,6 @@
 #define GetCurrentDir getcwd
 #endif
 using namespace std;
-
 namespace fs = __fs::filesystem;
 namespace me = this_thread;
 using namespace chrono;
@@ -109,6 +109,7 @@ std::ofstream devnull("/dev/null", std::ofstream::out | std::ofstream::app);
 FILE *devnull_f;
 Logger debug("DEBUG");
 Logger commandsLogger("CMD");
+
 int to_int(const string &c) {
     debug << "try to parse '" << c << "'" << endl;
     fflush(stdout);
@@ -257,34 +258,24 @@ char *to_system_cmd(char *args[]) {
     return cmd;
 }
 
-std::ostream *file_with_timestamp(string name) {
-    time_t t = time(nullptr);   // get time now
-    struct tm *now = localtime(&t);
+template<typename T>
+class KeyValueProperty {
+public:
+    T value = T();
+    std::string key = "";
 
-    char buffer[80 + name.length()];
-    strftime(buffer, 80, "%Y-%m-%d.", now);
+    KeyValueProperty(const std::string &key) : key(key) {}
 
-    auto *myfile = new std::ofstream();
-    myfile->open(name + "_" + buffer);
-    if (myfile->is_open()) {
-        std::cout << "Success" << std::endl;
-    }
-    return myfile;
-}
+    T &operator=(const T &i) { return value = i; };
 
-std::ostream &bold_on(std::ostream &os) {
-    return os << "\e[1m";
-}
-
-std::ostream &bold_off(std::ostream &os) {
-    return os << "\e[0m";
-}
+    operator const T &() { return value; };
+};
 
 Path getVideoFile() {
     while (!fs::exists(file2trans)) {
         if (!file2trans.empty())
-            cerr << "Can't find file '" << file2trans << "'" << endl;
-        cout << bold_on << "file to translate: " << bold_off;
+            cerr << "Can't find file " << file2trans << endl;
+        cout << Font(Style::bold) << "file to translate: " <<   Font::reset;
         file2trans = utils::getUnboundedLine();
     }
     return file2trans;
@@ -330,6 +321,13 @@ void load(size_t dots, size_t max_dots = 3) {
         cout << (i < dots ? "." : " ");
     fflush(stdout);
 }
+void endLoad(size_t max_dots = 3) {
+    cout << "\r        ";
+    for (size_t i = 0; i < max_dots; i++)
+        cout << " ";
+    cout<<endl;
+    fflush(stdout);
+}
 
 int getTrackNum() {
     if (trackNum != -1 || !subFile.empty())
@@ -348,14 +346,14 @@ int getTrackNum() {
             options.push_back({i, max_dialog});
         }
     }
+    endLoad();
     debug << "[" << getpid() << "] " << "finished mkvExtract(...)" << endl;
-    cout << "\r";
-    cout << bold_on << "Choose language or enter a subtitle filename" << bold_off << endl;
+    cout << Font(Style::bold) << "Choose language or enter a subtitle filename" <<   Font::reset << endl;
     for (const auto &option: options) {
-        cout << "O " << bold_on << "[" << option.index << "] " << bold_off << option.dialog << endl;
+        cout << "O " << Font(Style::bold) << "[" << option.index << "] " <<   Font::reset << option.dialog << endl;
     }
     while (trackNum == -1) {
-        cout << bold_on << "your choice: " << bold_off;
+        cout << Font(Style::bold) << "your choice: " <<   Font::reset;
         string line = utils::getUnboundedLine();
         if (exists(Path(line))) {
             subFile = line;
@@ -374,7 +372,7 @@ int getTrackNum() {
         catch (exception &e) {
             cout << "-------------------------------------------------------------------" << endl;
             cout << "it is not a number, please enter the number of the wanted language:" << endl;
-            cout << bold_on << "Choose language or enter a subtitle filename" << bold_off << endl;
+            cout << Font(Style::bold) << "Choose language or enter a subtitle filename" <<   Font::reset << endl;
             for (const auto &option: options) {
                 cout << "[" << option.index << "] " << option.dialog << endl;
             }
@@ -401,7 +399,7 @@ bool isValidSubtitleFile(const Path &subs, bool errorNotExists = true) {
 
 Path getSubFileRaw() {
     while (!isValidSubtitleFile(subFile)) {
-        cout << bold_on << "subtitle file: " << bold_off;
+        cout << Font(Style::bold) << "subtitle file: " <<   Font::reset;
         subFile = utils::getUnboundedLine();
     }
     return subFile;
@@ -455,7 +453,7 @@ int main(int argc, char *argv[]) {
     string sfn_s = getSubFile();
 
     pid_t pid = fork();
-    FILE* vlc_stderr = fopen("vlc_stderr.log", "w+");
+    FILE *vlc_stderr = fopen("vlc_stderr.log", "w+");
 
     if (pid == 0) { //child
         debug << "pid child: " << getpid() << endl;
@@ -606,7 +604,7 @@ void step3_translate(const string &t) {
         while (getline(src, line)) {
             lineStartsTarget.push_back(trg.tellg());
             lineStartsSource.push_back(src.tellg());
-            debug <<"aaaaaa:"<<src.tellg()<<endl;
+            debug << "aaaaaa:" << src.tellg() << endl;
 
             if (!stop) {
                 if (line.starts_with("[")) {
@@ -630,9 +628,9 @@ void step3_translate(const string &t) {
                     TRANSLATE:
                     cur = vlc_get_time();
 
-                    cout << "[" << getRegex(line, time_pattern)[3] << "] - ";
-                    cout << "[" << getRegex(line, stop_pattern)[3] << "]" << endl;
-                    cout << "[# - exit, $ - replay, ^ - undo last line]" << endl;
+                    cout << Font(Color::yellow)<< "[" << getRegex(line, time_pattern)[3] << "] - ";
+                    cout << "[" << getRegex(line, stop_pattern)[3] << "]" << Font::reset << endl;
+                    cout << Font(Color::cyan) << "[# - exit, $ - replay, ^ - undo last line]" << Font::reset << endl;
                     cout << sm_text[3] << endl;
                     if ((!translation.starts_with("$")) && (time_to_play_to_1 < cur || cur + 12 < time_to_play_to_1))
                         sendCommand("seek " + to_string(time_to_play_to_1));
@@ -664,11 +662,11 @@ void step3_translate(const string &t) {
                         break;
                     }
                     else if (translation == "") {
-                        debug <<"bbbbbbb:"<<src.tellg()<<endl;
+                        debug << "bbbbbbb:" << src.tellg() << endl;
                         lineStartsSource.pop_back();
                         debug << lineStartsSource.back() << endl;
                         src.seekg(lineStartsSource.back(), ios::beg);
-                        debug <<"ccccccc:"<<src.tellg()<<endl;
+                        debug << "ccccccc:" << src.tellg() << endl;
                         continue;
                     }
                     else if (translation.starts_with("^")) {
@@ -696,7 +694,7 @@ void step3_translate(const string &t) {
                 trg << line << endl;
                 trg.flush();
             }
-            debug <<"ggggggg:"<<src.tellg()<<endl;
+            debug << "ggggggg:" << src.tellg() << endl;
 
         }
         trg.close();

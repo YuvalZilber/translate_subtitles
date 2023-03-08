@@ -3,4 +3,4 @@ project(extract_subtitles_2)
 
 set(CMAKE_CXX_STANDARD 23)
 
-add_executable(extract_subtitles_2 main.cpp utils.cpp utils.h colors.cpp)
+add_executable(extract_subtitles_2 src/main.cpp src/utils.cpp headers/utils.h src/font_2.cpp headers/font_2.h src/font.cpp headers/font.h)
