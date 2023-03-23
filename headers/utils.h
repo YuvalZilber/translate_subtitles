@@ -41,7 +41,8 @@ namespace utils {
     size_t find_index(vector<string> &v, const string &element);
     smatch GetRegex(const string &line, const regex &text_pattern);
     void error(const string &msg, int code = -1);
-
+    bool endsWithPunctuation(const string &line);
+    string getPunctuationAtEnd(const string& line);
 
 
     FILE* OpenFile(int fd);
@@ -52,6 +53,8 @@ namespace utils {
     char* TrimEnd(char *sp, array<char[], N>& toTrim);
     template<class T>
     size_t length(T* arr[]);
+
+
 };
 
 

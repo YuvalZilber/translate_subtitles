@@ -71,7 +71,7 @@ string MkvFile::GetTrackNum() {
             cout << "it is not a number, please enter the number of the wanted language:" << endl;
             cout << Font(Style::bold) << "Choose language or enter a subtitle filename" << Font::reset << endl;
             for (const auto &option: options) {
-                cout << "[" << option.index << "] " << option.dialog << endl;
+                cout << "[" << to_string(option.index) << "] " << option.dialog << endl;
             }
         }
 
@@ -96,9 +96,10 @@ string MkvFile::LongestDialog(Path &p) {
             string sformat = split(line)[1];
             format = split(sformat, ",");
             text_pattern = GetPatternByTitle(format, "Text");
-        }
-        else if (line.starts_with("Dialogue: ")) {
-            string dialog = GetRegex(line, text_pattern)[3];
+        } else if (line.starts_with("Dialogue: ")) {
+            auto reg = GetRegex(line, text_pattern);
+            auto k = reg[3];
+            string dialog{k};
             dialog = regex_replace(dialog, regex(R"(\{\\[^}]*\})"), "");
             if (dialog.contains("\\N") || dialog.contains("<"))
                 continue;
@@ -138,13 +139,13 @@ Path MkvFile::MkvExtract(const string &si) {
     int bu_err;
     FILE *n_out, *n_err;
     vector<string> paths;
-    debug << "[" << getpid() << "] " << "from pid:" << getpid() << endl;
+    debug << "[" << to_string(getpid()) << "] " << "from pid:" << getpid() << endl;
     switch (pid = fork()) {
         case -1:
             error("Error using fork()");
             break;
         case 0:
-            debug << "[" << getpid() << "] " << "#child start " << endl;
+            debug << "[" << to_string(getpid()) << "] " << "#child start " << endl;
 
             mkstemp(out);
             mkstemp(err);
@@ -157,7 +158,7 @@ Path MkvFile::MkvExtract(const string &si) {
 
             execvp(scmds[0], scmds);
             debug << "[" << getpid() << "] " << "#execvp mkvextract ERROR! " << errno << endl;
-            debug << "Please, make sure that the mkvextract executable is in one of the following paths:" << endl;
+            debug << "Please,, make sure that the mkvextract executable is in one of the following paths:" << endl;
             paths = utils::split(getenv("PATH"), ":");
 
             for (const auto &path_0: paths) {
@@ -172,11 +173,12 @@ Path MkvFile::MkvExtract(const string &si) {
             close(bu_out);
             close(bu_err);
             debug << "[" << getpid() << "] " << "#execvp mkvextract ERROR! " << errno << endl;
-            debug << "Please, make sure that the mkvextract executable is in one of the following paths:" << endl;
+            cout << "Command mkvextract not found" << endl;
+            cout << "Please, make sure that the mkvextract executable is in one of the following paths:" << endl;
             paths = utils::split(getenv("PATH"), ":");
 
             for (const auto &path_0: paths) {
-                debug << path_0 << endl;
+                cout << path_0 << endl;
             }
             error("mkvextract couldn't run", errno);
             break;
@@ -198,15 +200,15 @@ Path MkvFile::MkvExtract(const string &si) {
 #endif
 //    delete[] (cmd);
     if (res == 0)
-        return consts::output / p;
+        return output / p;
     else
         return Path();
 }
 
-string MkvFile::get_digits_of_choice(const string& choice){
+string MkvFile::get_digits_of_choice(const string &choice) {
     regex pattern{R"(^\[?(\d+)\]?$)"};
     smatch match;
-    if(regex_match(choice, match, pattern))
+    if (regex_match(choice, match, pattern))
         return match[0];
 
     return "";

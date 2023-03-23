@@ -2,12 +2,28 @@
 // Created by Yuval Zilber on 09/02/2023.
 //
 
+#include <wait.h>
+#include <unistd.h>
+#include <cstdio>  /* defines FILENAME_MAX */
+#include <thread>
+#include <array>
+#include <chrono>
+#include <regex>
+#include "../headers/MkvFile.h"
+#include "../headers/font.h"
+#include <fstream>
+#include <cstdlib>
+#include <filesystem>
+#include <string>
+#include <vector>
+#include <iostream>
 #include "../headers/utils.h"
 
 #define ever (;;)
 using namespace std;
 namespace utils {
     map<int, FILE *> files;
+
 //region split
     vector<string> split(const string &s, const string &delimiter) {
         size_t pos_start = 0, pos_end, delim_len = delimiter.length();
@@ -106,9 +122,11 @@ namespace utils {
         ostringstream all;
         string line;
         auto process_line = [&all, &prefix](const string &s) {
-            all << s << "\n";
-            if (!prefix.empty())
-                cout << "[" << prefix << "] " << s << endl;
+            if (s != "\3" && s != "\3\n") {
+                all << s << "\n";
+                if (!prefix.empty())
+                    cout << "[" << prefix << "] " << s << endl;
+            }
         };
 
         int flags = -1;
@@ -129,20 +147,26 @@ namespace utils {
         char *buffer = nullptr;
         size_t line_cap = 0;
         int k = (int) getline(&buffer, &line_cap, file);
+
         if (k == -1) {
-            delete (buffer);
+
+            free(buffer);
             return "\3";
         }
-        string line = buffer;
-        delete (buffer);
+        string line;
+        if (buffer != nullptr) {
+            line = buffer;
+            free(buffer);
+        }
         while (line.ends_with("\n"))
             line = line.substr(0, line.length() - 1);
         return line;
     }
 
     string getUnboundedLine(int fd) {
-        FILE *file = OpenFile(fd);
-        return getUnboundedLine(file);
+        FILE *file = fdopen(fd, "r");
+        string res = getUnboundedLine(file);
+        return res;
     }
 
     FILE *OpenFile(int fd) {
@@ -243,6 +267,7 @@ namespace utils {
         fflush(stdout);
         return stoi(c);
     }
+
     regex GetPatternByTitle(vector<string> &format, const string &title) {
         int text_index = (int) find_index(format, title);
         if (text_index < 0)
@@ -254,7 +279,8 @@ namespace utils {
             parts_after += ",";
         }
 
-        string pattern = "^(Dialogue: ([^,]*,){" + to_string(text_index) + "})(" + c + "*)((,[^,]*){" + parts_after + "})$";
+        string pattern =
+                "^(Dialogue: ([^,]*,){" + to_string(text_index) + "})(" + c + "*)((,[^,]*){" + parts_after + "})$";
         return regex(pattern);
     }
 
@@ -264,15 +290,30 @@ namespace utils {
             return -1;
         return index;
     }
+
     smatch GetRegex(const string &line, const regex &text_pattern) {
         smatch sm_text;
         regex_match(line, sm_text, text_pattern);
         return sm_text;
     }
+
     void error(const string &msg, int code) {
         cerr << "[ERR] " << msg << endl;
         cout << "[ERR] " << msg << endl;
         if (code != 0)
             exit(code);
+    }
+
+    bool endsWithPunctuation(const string &line) {
+
+        return line.find_last_of(punctuation, line.length()) == line.length() - 1;
+    }
+
+    string getPunctuationAtEnd(const string &line) {
+        size_t pos = line.length();
+        while (pos >0 && punctuation.contains(line[pos-1]))
+            pos--;
+        return line.substr(pos);
+
     }
 }

@@ -6,6 +6,7 @@
 #include <fstream>
 #include "../headers/font.h"
 #include "../headers/MkvFile.h"
+#include "../headers/utils.h"
 #include <regex>
 #include <chrono>
 #include <array>
@@ -18,6 +19,7 @@
 #else
 
 #include <unistd.h>
+#include <wait.h>
 
 #define GetCurrentDir getcwd
 #endif
@@ -47,8 +49,6 @@ void step3_translate(const string &t);
 std::string string_to_hex(const std::string &input);
 
 void process_break_line(const string &origin, string &translation);
-
-bool endsWithPunctuation(const string &line);
 
 template<class T>
 void print_vector(const vector<T> &hhmmss_stop);
@@ -96,7 +96,7 @@ string pwd() {
     }
 
     c_current_path[sizeof(c_current_path) - 1] = '\0';
-    printf("[%d] PWD:%s", getpid(), c_current_path);
+    printf("[%d] PWD:%s\n", getpid(), c_current_path);
     string cwd(c_current_path);
     return cwd;
 }
@@ -265,8 +265,7 @@ int main(int argc, char *argv[]) {
             if (!fs::exists(sub_file)) {
                 error("Couldn't find subtitles file '" + sub_file.string() + "'", 0);
                 sub_file = "";
-            }
-            else if (MkvFile::LongestDialog(sub_file).empty())
+            } else if (MkvFile::LongestDialog(sub_file).empty())
                 error("the file '" + sub_file.string() + "' is not a valid subtitle file format");
         }
         if (arg == "-v" || arg == "--vid-file") {
@@ -278,21 +277,31 @@ int main(int argc, char *argv[]) {
             else
                 cout << "[SUC] Chose file " << file2trans << endl;
         }
+        if (arg == "-p") {
+            if (fs::exists("heb_sub1.ass")) {
+                if (fs::exists("try.ass"))
+                    fs::remove("try.ass");
+                fs::copy("heb_sub1.ass", "try.ass");
+            } else if (fs::exists("heb_sub.ass")) {
+                if (fs::exists("try.ass"))
+                    fs::remove("try.ass");
+                fs::copy("heb_sub.ass", "heb_sub1.ass");
+                fs::rename("heb_sub.ass", "try.ass");
+            }
+            sub_file = "try.ass";
+        }
     }
-//    if(!debug_mode)
-//        debug =
     pipe(pipe_to_vlc);
     pipe(pipe_out_vlc);
     string fn_s = getVideoFile();
     string sfn_s = getSubFile();
-
     pid_t pid = fork();
+    pwd();
     FILE *vlc_stderr = fopen("vlc_stderr.log", "w+");
 
     if (pid == 0) { //child
-        debug << "pid child: " << getpid() << endl;
-
-        fs::current_path("/");
+        debug << "pid child: " << to_string(getpid()) << endl;
+//        fs::current_path("/");
         char filename[fn_s.length() + 1];
         strcpy(filename, fn_s.c_str());
 
@@ -305,11 +314,12 @@ int main(int argc, char *argv[]) {
 //        strcpy(all_cmd_c, all_cmd.c_str());
 //        char *args[] = {(char*)"osascript", (char*)"-e", all_cmd_c,nullptr};
         char *args[] = {(char *) "vlc", (char *) "-I", (char *) "rc", (char *) "--extraintf",
-                        (char *) "macosx",
+                        vlc_interface_module,
                         (char *) "--sub-file", subFile_c, filename, nullptr};
         debug << "$$$$$$$$$$ " << subFile_c << endl;
-
-
+        char *cs = to_system_cmd(args);
+        debug << "[CMD] " << pwd() << endl;
+        debug << "[CMD] " << cs << endl;
         close(pipe_to_vlc[WRITE]);
         close(pipe_out_vlc[READ]);
         int fd_in = pipe_to_vlc[READ];
@@ -321,16 +331,15 @@ int main(int argc, char *argv[]) {
         dup(fd_in);
         close(STDOUT_FILENO);
         dup(fd_out);
-        cout << to_system_cmd(args) << endl;
         execvp(args[0], args);
-    }
-    else {//parent
-        debug << "pid parent: " << getpid() << endl;
+//        system(to_system_cmd(args));
+        delete[] cs;
+    } else {//parent
+        int pidp = getpid();
+        debug << "pid parent: " << to_string(pidp) << "\n";
         close(pipe_to_vlc[READ]);
         close(pipe_out_vlc[WRITE]);
-        int fd_vlc_out = pipe_out_vlc[READ];
         sleep(3);
-        utils::MyFlush(fd_vlc_out, "OUT");
         string response;
 
         SendCommand("help", &response);
@@ -372,8 +381,7 @@ void step3_translate(const string &t) {
         trg.open(filename_trg, fstream::out | fstream::in);
 
         was_exist = true;
-    }
-    else
+    } else
         trg.open(filename_trg, fstream::out);
     if (!trg) {
         cerr << "Can't open target file: '" << filename_trg << "'" << endl;
@@ -388,11 +396,9 @@ void step3_translate(const string &t) {
         string line;
         vector<string> format;
         regex text_pattern, time_pattern, stop_pattern;
-        bool stop = false;
         int lines_num = 0;
-        vector<size_t> line_starts_target;
-        vector<size_t> line_starts_source;
-        ostream *tell2_ptr;
+        vector<long> line_starts_target;
+        vector<long> line_starts_source;
         if (was_exist) {
             while (getline(trg, line)) {
                 lines_num++;
@@ -412,107 +418,101 @@ void step3_translate(const string &t) {
             trg.open(filename_trg, ios::out | ios::app);
         }
 
-        debug << "loaded " << lines_num << " lines" << endl;
+        debug << "loaded " << to_string(lines_num) << " lines" << endl;
 //        auto *tell_ptr = file_with_timestamp("tell");
 //        auto &tell = *tell_ptr;
         while (getline(src, line)) {
             line_starts_target.push_back(trg.tellg());
             line_starts_source.push_back(src.tellg());
 
-            if (!stop) {
-                if (line.starts_with("[")) {
-                }
-                else if (line.starts_with("Format: ")) {
-                    string sformat = utils::split(line)[1];
-                    format = utils::split(sformat, ",");
-                    text_pattern = GetPatternByTitle(format, "Text");
-                    time_pattern = GetPatternByTitle(format, "Start");
-                    stop_pattern = GetPatternByTitle(format, "End");
-                }
-                else if (line.starts_with("Dialogue: ")) {
-                    smatch sm_text = GetRegex(line, text_pattern);
-                    vector<int> hhmmss_start = GetVector(line, time_pattern);
+            if (line.starts_with("[")) {
+            } else if (line.starts_with("Format: ")) {
+                string sformat = utils::split(line)[1];
+                format = utils::split(sformat, ",");
+                text_pattern = GetPatternByTitle(format, "Text");
+                time_pattern = GetPatternByTitle(format, "Start");
+                stop_pattern = GetPatternByTitle(format, "End");
+            } else if (line.starts_with("Dialogue: ")) {
+                smatch sm_text = GetRegex(line, text_pattern);
+                vector<int> hhmmss_start = GetVector(line, time_pattern);
 
-                    vector<int> hhmmss_end = GetVector(line, stop_pattern);
-                    int cur;
-                    int time_to_play_to_2 = hhmmss_end[2] + hhmmss_end[1] * 60 + hhmmss_end[0] * 60 * 60;
-                    int time_to_play_to_1 = hhmmss_start[2] + hhmmss_start[1] * 60 + hhmmss_start[0] * 60 * 60;
-                    string translation;
-                    TRANSLATE:
-                    cur = vlc_get_time();
+                vector<int> hhmmss_end = GetVector(line, stop_pattern);
+                int cur;
+                int time_to_play_to_2 = hhmmss_end[2] + hhmmss_end[1] * 60 + hhmmss_end[0] * 60 * 60;
+                int time_to_play_to_1 = hhmmss_start[2] + hhmmss_start[1] * 60 + hhmmss_start[0] * 60 * 60;
+                if (time_to_play_to_2 > time_to_play_to_1 + 1)
+                    time_to_play_to_2--;
+                string translation;
+                TRANSLATE:
+                cur = vlc_get_time();
 
-                    cout << Font(Color::yellow) << "[" << GetRegex(line, time_pattern)[3] << "] - ";
-                    cout << "[" << GetRegex(line, stop_pattern)[3] << "]" << Font::reset << endl;
-                    cout << Font(Color::cyan) << "[# - exit, $ - replay, ^ - undo last line]" << Font::reset << endl;
-                    cout << sm_text[3] << endl;
-                    if ((!translation.starts_with("$")) && (time_to_play_to_1 < cur || cur + 12 < time_to_play_to_1))
-                        SendCommand("seek " + to_string(time_to_play_to_1));
+                cout << Font(Color::yellow) << "[" << GetRegex(line, time_pattern)[3] << "] - ";
+                cout << "[" << GetRegex(line, stop_pattern)[3] << "]" << Font::reset << endl;
+                cout << Font(Color::cyan) << "[# - exit, $ - replay, ^ - undo last line]" << Font::reset << endl;
+                cout << sm_text[3] << endl;
+                if ((!translation.starts_with("$")) && (time_to_play_to_1 < cur || cur + 12 < time_to_play_to_1))
+                    SendCommand("seek " + to_string(time_to_play_to_1));
 //                    this_thread::sleep_for(milliseconds(250));
 
-                    cur = vlc_get_time();
-                    SendCommand("play");
-                    std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
-                    debug << "sleep for " << (time_to_play_to_2 - cur) << "s" << endl;
-                    sleep(time_to_play_to_2 - cur);
-                    if (hhmmss_start[2] == hhmmss_end[2]) {
-                        this_thread::sleep_for(milliseconds((hhmmss_start[3] + 1) * 10));
-                    }
-                    SendCommand("pause");
-                    //sendCommand("seek " + to_string(time_to_play_to_2));
-
-                    translation = utils::getUnboundedLine();
-                    if (translation.starts_with("$")) {
-                        cur = vlc_get_time();
-
-                        int requested = atoi(translation.substr(1).c_str());
-                        int time_to_rewind = requested ? requested : 10;
-                        time_to_rewind = min(time_to_rewind, cur);
-                        SendCommand("seek " + to_string(cur - time_to_rewind));
-                        goto TRANSLATE;
-                    }
-                    else if (translation.starts_with("#")) {
-                        stop = true;
-                        break;
-                    }
-                    else if (translation.empty()) {
-                        line_starts_source.pop_back();
-                        debug << line_starts_source.back() << endl;
-                        src.seekg(line_starts_source.back(), ios::beg);
-                        continue;
-                    }
-                    else if (translation.starts_with("^")) {
-                        line_starts_source.pop_back();
-                        line_starts_source.pop_back();
-                        debug << line_starts_source.back() << endl;
-                        src.seekg(line_starts_source.back(), ios::beg);
-
-                        line_starts_target.pop_back();
-                        trg.close();
-                        truncate(filename_trg.c_str(), line_starts_target.back());
-                        line_starts_target.pop_back();
-                        trg.open(filename_trg, ios::out | ios::app);
-
-                        continue;
-                    }
-                    else {
-                        process_break_line(line, translation);
-
-                        line = string(sm_text[1]) + translation + string(sm_text[5]);
-                    }
-//                    tell << trg.tellp() << "-" << trg.tellg() << endl;
+                cur = vlc_get_time();
+                SendCommand("play");
+                std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+                debug << "sleep for " << to_string(time_to_play_to_2 - cur) << "s" << endl;
+                sleep(time_to_play_to_2 - cur);
+                if (hhmmss_start[2] == hhmmss_end[2]) {
+                    this_thread::sleep_for(milliseconds((hhmmss_start[3] + 1) * 10));
                 }
-                //trg.seekp(0, ios::end);
-                trg << line << endl;
-                trg.flush();
+                SendCommand("pause");
+                //sendCommand("seek " + to_string(time_to_play_to_2));
+
+                translation = utils::getUnboundedLine();
+                if (translation.starts_with("$")) {
+                    cur = vlc_get_time();
+
+                    int requested = atoi(translation.substr(1).c_str());
+                    int time_to_rewind = requested ? requested : 10;
+                    time_to_rewind = min(time_to_rewind, cur);
+                    SendCommand("seek " + to_string(cur - time_to_rewind));
+                    goto TRANSLATE;
+                } else if (translation.starts_with("#")) {
+                    break;
+                } else if (translation.empty()) {
+                    line_starts_source.pop_back();
+                    debug << to_string(line_starts_source.back()) << endl;
+                    src.seekg(line_starts_source.back(), ios::beg);
+                    continue;
+                } else if (translation.starts_with("^")) {
+                    line_starts_source.pop_back();
+                    line_starts_source.pop_back();
+                    debug << to_string(line_starts_source.back()) << endl;
+                    src.seekg(line_starts_source.back(), ios::beg);
+
+                    line_starts_target.pop_back();
+                    trg.close();
+                    truncate(filename_trg.c_str(), line_starts_target.back());
+                    line_starts_target.pop_back();
+                    trg.open(filename_trg, ios::out | ios::app);
+
+                    continue;
+                } else {
+                    process_break_line(line, translation);
+
+                    line = string(sm_text[1]) + translation + string(sm_text[5]);
+                }
+//                    tell << trg.tellp() << "-" << trg.tellg() << endl;
             }
+            //trg.seekp(0, ios::end);
+            trg << line << endl;
+            trg.flush();
 
         }
         trg.close();
         src.close();
-    }
-    else {
+    } else {
         if (!src.is_open())
             cerr << "couldn't open src '" << filename_src << "'" << endl;
+        if (!trg.is_open())
+            cerr << "couldn't open trg '" << filename_trg << "'" << endl;
     }
     SendCommand("quit");
     cout << "bye!" << endl;
@@ -571,7 +571,7 @@ void process_break_line(const string &origin, string &translation) {
     translation = regex_replace(translation, regex(R"((^(\s|\\N)+)|((\s|\\N)+$))"), "");
 
     if (endsWithPunctuation(origin) && !endsWithPunctuation(translation))
-        translation += origin[origin.length() - 1];
+        translation += getPunctuationAtEnd(origin);
 
     vector<string> lines = utils::split(translation, " \\N");
     string res = flipPunctuationIfNeeded(n, lines);
@@ -588,7 +588,9 @@ string flipPunctuationIfNeeded(size_t n, const vector<string> &lines) {
 
             n = line.length();
             if (endsWithPunctuation(line)) {
-                line = line[n - 1] + line.substr(0, n - 1);
+                string punc = getPunctuationAtEnd(line);
+                std::reverse(punc.begin(), punc.end());
+                line = punc + line.substr(0, n - punc.length());
             }
             res += line;
             if (i < lines.size() - 1)
@@ -596,12 +598,6 @@ string flipPunctuationIfNeeded(size_t n, const vector<string> &lines) {
         }
     }
     return res;
-}
-
-bool endsWithPunctuation(const string &line) {
-    string punctuation = ",.!?:;\"\\/'";
-
-    return line.find_last_of(punctuation, line.length()) == line.length() - 1;
 }
 
 

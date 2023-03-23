@@ -15,6 +15,8 @@
 #include <fstream>
 #include <cstdlib>
 #include <cstdlib>
+#include <wait.h>
+
 #ifdef WINDOWS
 #include <direct.h>
 #define GetCurrentDir _getcwd
@@ -25,7 +27,7 @@
 #define GetCurrentDir getcwd
 #endif
 using namespace std;
-namespace fs = __fs::filesystem;
+namespace fs = filesystem;
 
 class MkvFile {
 private:
