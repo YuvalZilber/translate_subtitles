@@ -4,9 +4,6 @@
 #include <filesystem>
 #include <cstdlib>
 #include <fstream>
-#include "../headers/font.h"
-#include "../headers/MkvFile.h"
-#include "../headers/utils.h"
 #include <regex>
 #include <chrono>
 #include <array>
@@ -21,11 +18,15 @@
 #include <unistd.h>
 #include <wait.h>
 
+#include "../headers/consts.h"
+
+#include "../headers/font.h"
+#include "../headers/MkvFile.h"
+#include "../headers/Vlc.h"
 #define GetCurrentDir getcwd
 #endif
 using namespace std;
 namespace me = this_thread;
-using namespace chrono;
 using namespace utils;
 using namespace logger;
 
@@ -40,15 +41,15 @@ vector<Path> get_eng_sub_paths(const char *src);
 
 void step2(const vector<Path> &paths, const char *track_num);
 
-Path MkvExtract(const Path &path, size_t si);
+Path mkvExtract(const Path &path, size_t si);
 
-Path MkvExtract(const Path &path, const string &si);
+Path mkvExtract(const Path &path, const string &si);
 
-void step3_translate(const string &t);
+void step3_translate(Vlc vlc, const string &t);
 
 std::string string_to_hex(const std::string &input);
 
-void process_break_line(const string &origin, string &translation);
+void process_break_line(string &origin, string &translation);
 
 template<class T>
 void print_vector(const vector<T> &hhmmss_stop);
@@ -58,19 +59,18 @@ const std::ofstream devnull("/dev/null", std::ofstream::out | std::ofstream::app
 FILE *devnull_f;
 
 
-vector<int> GetVector(const string &line, regex &time_pattern);
+vector<int> getVector(const string &line, regex &time_pattern);
 
 string getRegexS(const string &line, const regex &text_pattern);
 
-string *SendCommand(const string &cmd, string *response = nullptr);
 
-int vlc_get_time();
+int vlc_get_time(Vlc vlc);
 
 string flipPunctuationIfNeeded(size_t n, const vector<string> &lines);
 
-int vlc_get_time() {
+int vlc_get_time(Vlc vlc) {
     string cur_s;
-    SendCommand("get_time", &cur_s);
+    vlc.sendCommand("get_time", &cur_s);
     cur_s = regex_replace(cur_s, regex("^\\D+"), "");
     if (cur_s.empty())
         return -1;
@@ -87,23 +87,6 @@ const std::ostream &debug1() {
     return devnull;
 }
 
-
-string pwd() {
-    char c_current_path[FILENAME_MAX];
-
-    if (!GetCurrentDir(c_current_path, sizeof(c_current_path))) {
-        exit(99);
-    }
-
-    c_current_path[sizeof(c_current_path) - 1] = '\0';
-    printf("[%d] PWD:%s\n", getpid(), c_current_path);
-    string cwd(c_current_path);
-    return cwd;
-}
-
-void WriteLine(const string &line) {
-    write(pipe_to_vlc[WRITE], (line + "\n").c_str(), line.length() + 1);
-}
 
 int getDialogLine(Path &p) {
     ifstream src(p);
@@ -204,7 +187,7 @@ bool isValidSubtitleFile(const Path &subs, bool error_not_exists = true) {
             cerr << "Can't find file '" << sub_file << "'" << endl;
         return false;
     }
-    if (MkvFile::LongestDialog(sub_file).empty()) {
+    if (MkvFile::longestDialog(sub_file).empty()) {
         error("the file '" + sub_file.string() + "' is not a valid subtitle file format", 0);
         return false;
     }
@@ -226,7 +209,7 @@ Path getSubFile() {
         string ext = file.extension().string();
         if (ext == ".mkv") {
             MkvFile mkv{file};
-            sub_file = mkv.ChooseSubtitleFile();
+            sub_file = mkv.chooseSubtitleFile();
 
         }
         getSubFileRaw();
@@ -234,25 +217,9 @@ Path getSubFile() {
     return sub_file;
 }
 
-FILE *open_file_timestamp(string filename) {
-    time_t t = time(0);   // get time now
-    struct tm *now = localtime(&t);
-
-    char buffer[80];
-    size_t length = strftime(buffer, 80, "%Y-%m-%d_%H-%M-%S", now);
-    string full_filename = buffer;
-//    myString.assign(buffer);
-    std::ofstream myfile;
-    myfile.open(buffer);
-    if (myfile.is_open()) {
-        std::cout << "created log file" << std::endl;
-    }
-    myfile.close();
-    return 0;
-}
 
 int main(int argc, char *argv[]) {
-    output = pwd();
+    output = utils::pwd();
     devnull_f = fopen("/dev/null", "w+");
     for (int i = 0; i < argc; ++i) {
         string arg = argv[i];
@@ -265,7 +232,7 @@ int main(int argc, char *argv[]) {
             if (!fs::exists(sub_file)) {
                 error("Couldn't find subtitles file '" + sub_file.string() + "'", 0);
                 sub_file = "";
-            } else if (MkvFile::LongestDialog(sub_file).empty())
+            } else if (MkvFile::longestDialog(sub_file).empty())
                 error("the file '" + sub_file.string() + "' is not a valid subtitle file format");
         }
         if (arg == "-v" || arg == "--vid-file") {
@@ -282,105 +249,48 @@ int main(int argc, char *argv[]) {
                 if (fs::exists("try.ass"))
                     fs::remove("try.ass");
                 fs::copy("heb_sub1.ass", "try.ass");
-            } else if (fs::exists("heb_sub.ass")) {
+            } else if (fs::exists("heb_sub1.ass")) {
                 if (fs::exists("try.ass"))
                     fs::remove("try.ass");
-                fs::copy("heb_sub.ass", "heb_sub1.ass");
-                fs::rename("heb_sub.ass", "try.ass");
+                fs::copy("heb_sub1.ass", "heb_sub1.ass");
+                fs::rename("heb_sub1.ass", "try.ass");
             }
             sub_file = "try.ass";
         }
     }
-    pipe(pipe_to_vlc);
-    pipe(pipe_out_vlc);
+
+
+
     string fn_s = getVideoFile();
     string sfn_s = getSubFile();
-    pid_t pid = fork();
-    pwd();
-    FILE *vlc_stderr = fopen("vlc_stderr.log", "w+");
 
-    if (pid == 0) { //child
-        debug << "pid child: " << to_string(getpid()) << endl;
-//        fs::current_path("/");
-        char filename[fn_s.length() + 1];
-        strcpy(filename, fn_s.c_str());
+    Vlc vlc = Vlc(fn_s, sfn_s);
 
-        char subFile_c[sfn_s.length() + 1];
-        strcpy(subFile_c, sfn_s.c_str());
-        // vlc -I rc --extraintf macosx
-//        string cmd = "vlc -I rc --extraintf macosx --sub-file "+sfn_s+" "+fn_s;
-//        string all_cmd = (R"(tell app "Terminal" to do script ")"+cmd+R"(")");
-//        char all_cmd_c[all_cmd.length() + 1];
-//        strcpy(all_cmd_c, all_cmd.c_str());
-//        char *args[] = {(char*)"osascript", (char*)"-e", all_cmd_c,nullptr};
-        char *args[] = {(char *) "vlc", (char *) "-I", (char *) "rc", (char *) "--extraintf",
-                        vlc_interface_module,
-                        (char *) "--sub-file", subFile_c, filename, nullptr};
-        debug << "$$$$$$$$$$ " << subFile_c << endl;
-        char *cs = to_system_cmd(args);
-        debug << "[CMD] " << pwd() << endl;
-        debug << "[CMD] " << cs << endl;
-        close(pipe_to_vlc[WRITE]);
-        close(pipe_out_vlc[READ]);
-        int fd_in = pipe_to_vlc[READ];
-        int fd_out = pipe_out_vlc[WRITE];
-        int fd_err = fileno(vlc_stderr);
-        close(STDERR_FILENO);
-        dup(fd_err);
-        close(STDIN_FILENO);
-        dup(fd_in);
-        close(STDOUT_FILENO);
-        dup(fd_out);
-        execvp(args[0], args);
-//        system(to_system_cmd(args));
-        delete[] cs;
-    } else {//parent
-        int pidp = getpid();
-        debug << "pid parent: " << to_string(pidp) << "\n";
-        close(pipe_to_vlc[READ]);
-        close(pipe_out_vlc[WRITE]);
-        sleep(3);
-        string response;
+    int pidp = getpid();
+    debug << "pid parent: " << to_string(pidp) << "\n";
+    sleep(3);
+    string response;
 
-        SendCommand("help", &response);
-        cout << response << endl;
-        step3_translate("heb_sub.ass");
+    vlc.sendCommand("help", &response);
+    cout << response << endl;
+    step3_translate(vlc, "heb_sub.ass");
 
-        wait(nullptr);
-    }
+    wait(nullptr);
     return 0;
 }
 
-string *SendCommand(const string &cmd, string *response) {
-    WriteLine(cmd);
-    fflush(stderr);
-    CommandsLogger << "> " << cmd << endl;
-    if (response == nullptr) {
-        utils::MyFlush(pipe_out_vlc[READ], "", false);
-        return nullptr;
-    }
-    *response = utils::MyFlush(pipe_out_vlc[READ]);
-    *response = regex_replace(*response, regex("\r"), "");
-    *response = regex_replace(*response, regex("\n+$"), "");
-    CommandsLogger << "-------------------------------------------" << endl;
-    CommandsLogger << *response << endl;
-    CommandsLogger << "-------------------------------------------" << endl;
-    return response;
-}
 
-void step3_translate(const string &t) {
+void step3_translate(Vlc vlc, const string &t) {
     const string filename_src = getSubFile();
     const string &filename_trg = t;
 
     cout << filename_trg << endl;
     ifstream src(filename_src);
     fstream trg;
-    bool was_exist = false;
-    if (fs::exists(filename_trg)) {
+    bool target_already_exists = fs::exists(filename_trg);
+    if (target_already_exists) {
         cout << "found file from last run." << endl << "loading..." << endl << endl;
         trg.open(filename_trg, fstream::out | fstream::in);
-
-        was_exist = true;
     } else
         trg.open(filename_trg, fstream::out);
     if (!trg) {
@@ -399,18 +309,18 @@ void step3_translate(const string &t) {
         int lines_num = 0;
         vector<long> line_starts_target;
         vector<long> line_starts_source;
-        if (was_exist) {
+        if (target_already_exists) {
             while (getline(trg, line)) {
                 lines_num++;
                 getline(src, line);
                 line_starts_target.push_back(trg.tellg());
                 line_starts_source.push_back(src.tellg());
                 if (line.starts_with("Format: ")) {
-                    string sformat = utils::split(line)[1];
+                    string sformat = line.substr(line.find(' '));
                     format = utils::split(sformat, ",");
-                    text_pattern = GetPatternByTitle(format, "Text");
-                    time_pattern = GetPatternByTitle(format, "Start");
-                    stop_pattern = GetPatternByTitle(format, "End");
+                    text_pattern = getPatternByTitle(format, "Text");
+                    time_pattern = getPatternByTitle(format, "Start");
+                    stop_pattern = getPatternByTitle(format, "End");
                 }
             }
             line_starts_target.pop_back();
@@ -427,16 +337,16 @@ void step3_translate(const string &t) {
 
             if (line.starts_with("[")) {
             } else if (line.starts_with("Format: ")) {
-                string sformat = utils::split(line)[1];
+                string sformat = line.substr(line.find(' '));
                 format = utils::split(sformat, ",");
-                text_pattern = GetPatternByTitle(format, "Text");
-                time_pattern = GetPatternByTitle(format, "Start");
-                stop_pattern = GetPatternByTitle(format, "End");
+                text_pattern = getPatternByTitle(format, "Text");
+                time_pattern = getPatternByTitle(format, "Start");
+                stop_pattern = getPatternByTitle(format, "End");
             } else if (line.starts_with("Dialogue: ")) {
-                smatch sm_text = GetRegex(line, text_pattern);
-                vector<int> hhmmss_start = GetVector(line, time_pattern);
+                smatch sm_text = getRegex(line, text_pattern);
+                vector<int> hhmmss_start = getVector(line, time_pattern);
 
-                vector<int> hhmmss_end = GetVector(line, stop_pattern);
+                vector<int> hhmmss_end = getVector(line, stop_pattern);
                 int cur;
                 int time_to_play_to_2 = hhmmss_end[2] + hhmmss_end[1] * 60 + hhmmss_end[0] * 60 * 60;
                 int time_to_play_to_1 = hhmmss_start[2] + hhmmss_start[1] * 60 + hhmmss_start[0] * 60 * 60;
@@ -444,35 +354,35 @@ void step3_translate(const string &t) {
                     time_to_play_to_2--;
                 string translation;
                 TRANSLATE:
-                cur = vlc_get_time();
+                cur = vlc_get_time(vlc);
 
-                cout << Font(Color::yellow) << "[" << GetRegex(line, time_pattern)[3] << "] - ";
-                cout << "[" << GetRegex(line, stop_pattern)[3] << "]" << Font::reset << endl;
+                cout << Font(Color::yellow) << "[" << getRegex(line, time_pattern)[3] << "] - ";
+                cout << "[" << getRegex(line, stop_pattern)[3] << "]" << Font::reset << endl;
                 cout << Font(Color::cyan) << "[# - exit, $ - replay, ^ - undo last line]" << Font::reset << endl;
                 cout << sm_text[3] << endl;
                 if ((!translation.starts_with("$")) && (time_to_play_to_1 < cur || cur + 12 < time_to_play_to_1))
-                    SendCommand("seek " + to_string(time_to_play_to_1));
+                    vlc.sendCommand("seek " + to_string(time_to_play_to_1));
 //                    this_thread::sleep_for(milliseconds(250));
 
-                cur = vlc_get_time();
-                SendCommand("play");
+                cur = vlc_get_time(vlc);
+                vlc.sendCommand("play");
                 std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
                 debug << "sleep for " << to_string(time_to_play_to_2 - cur) << "s" << endl;
                 sleep(time_to_play_to_2 - cur);
                 if (hhmmss_start[2] == hhmmss_end[2]) {
-                    this_thread::sleep_for(milliseconds((hhmmss_start[3] + 1) * 10));
+                    this_thread::sleep_for(chrono::milliseconds((hhmmss_start[3] + 1) * 10));
                 }
-                SendCommand("pause");
-                //sendCommand("seek " + to_string(time_to_play_to_2));
+                vlc.sendCommand("pause");
+                //vlc.SendCommand("seek " + to_string(time_to_play_to_2));
 
                 translation = utils::getUnboundedLine();
                 if (translation.starts_with("$")) {
-                    cur = vlc_get_time();
+                    cur = vlc_get_time(vlc);
 
                     int requested = atoi(translation.substr(1).c_str());
                     int time_to_rewind = requested ? requested : 10;
                     time_to_rewind = min(time_to_rewind, cur);
-                    SendCommand("seek " + to_string(cur - time_to_rewind));
+                    vlc.sendCommand("seek " + to_string(cur - time_to_rewind));
                     goto TRANSLATE;
                 } else if (translation.starts_with("#")) {
                     break;
@@ -495,7 +405,8 @@ void step3_translate(const string &t) {
 
                     continue;
                 } else {
-                    process_break_line(line, translation);
+                    string origin = sm_text[3];
+                    process_break_line(origin, translation);
 
                     line = string(sm_text[1]) + translation + string(sm_text[5]);
                 }
@@ -514,7 +425,7 @@ void step3_translate(const string &t) {
         if (!trg.is_open())
             cerr << "couldn't open trg '" << filename_trg << "'" << endl;
     }
-    SendCommand("quit");
+    vlc.sendCommand("quit");
     cout << "bye!" << endl;
 }
 
@@ -528,7 +439,7 @@ string getRegexS(const string &line, const regex &text_pattern) {
 }
 
 
-vector<int> GetVector(const string &line, regex &time_pattern) {
+vector<int> getVector(const string &line, regex &time_pattern) {
     smatch sm_time;
     regex_match(line, sm_time, time_pattern);
     string time_s = sm_time[3].str();
@@ -543,8 +454,11 @@ vector<int> GetVector(const string &line, regex &time_pattern) {
     return hhmmss_start;
 }
 
-void process_break_line(const string &origin, string &translation) {
+void process_break_line(string &origin, string &translation) {
     translation = regex_replace(translation, regex(R"(\s*@\s*)"), " \\N");
+    auto styles = regex(R"((\{(([^}])|(\}\{))*\}))");
+
+    origin = regex_replace(origin, styles, "");
     size_t n = translation.length();
     if (!translation.contains("\\N")) {
         if (translation.contains(" ")) {
@@ -586,13 +500,18 @@ string flipPunctuationIfNeeded(size_t n, const vector<string> &lines) {
 
             line = regex_replace(line, regex(R"((^\s+)|(\s+$))"), "");
 
+            string prefix;
+            while (line.starts_with('-') || line.starts_with('"')) {
+                prefix += line[0];
+                line = line.substr(1);
+            }
             n = line.length();
             if (endsWithPunctuation(line)) {
                 string punc = getPunctuationAtEnd(line);
                 std::reverse(punc.begin(), punc.end());
-                line = punc + line.substr(0, n - punc.length());
+                line = punc.append(line.substr(0, n - punc.length()));
             }
-            res += line;
+            res += line + prefix;
             if (i < lines.size() - 1)
                 res += " \\N";
         }

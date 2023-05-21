@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include <cstdlib>
 #include <wait.h>
+#include <sys/wait.h>
 
 #ifdef WINDOWS
 #include <direct.h>
@@ -33,13 +34,13 @@ class MkvFile {
 private:
     Path filepath_;
     Path sub_file_;
-    string GetTrackNum();
-    Path MkvExtract(const string &si);
-    static string get_digits_of_choice(const string& choice);
+    string getTrackNum();
+    Path mkvExtract(const string &si);
+    static string getDigitsOfChoice(const string& choice);
 public:
     MkvFile(Path& filepath);
-    Path ChooseSubtitleFile();
-    static string LongestDialog(Path &p);
+    Path chooseSubtitleFile();
+    static string longestDialog(Path &p);
 };
 
 

@@ -7,18 +7,23 @@
 
 #include <iostream>
 #include <string>
+#include "../headers/base_consts.h"
+#include "../headers/base_utils.h"
 
 namespace logger {
-
     class NullBuffer : public std::streambuf {
 
     private:
         bool last_bl = true;
         std::string prefix;
-        FILE* log_file;
+        std::string log_file;
+
+        std::streambuf *old_buf;
     public:
-        explicit NullBuffer(std::string pre);
+        explicit NullBuffer(const std::string &pre, const std::string &filename);
+
         std::streamsize xsputn(const char *s, std::streamsize n) override;
+
         int_type overflow(int_type c) override;
     };
 

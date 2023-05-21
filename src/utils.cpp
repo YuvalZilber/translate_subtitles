@@ -9,6 +9,7 @@
 #include <array>
 #include <chrono>
 #include <regex>
+#include "../headers/Vlc.h"
 #include "../headers/MkvFile.h"
 #include "../headers/font.h"
 #include <fstream>
@@ -20,12 +21,23 @@
 #include "../headers/utils.h"
 
 #define ever (;;)
+
+
 using namespace std;
 namespace utils {
-    map<int, FILE *> files;
+    using namespace base_utils;
 
-//region split
-    vector<string> split(const string &s, const string &delimiter) {
+    //region strings
+    bool replace(string &str, const string &from, const string &to) {
+        size_t start_pos = str.find(from);
+        if (start_pos == std::string::npos)
+            return false;
+        str.replace(start_pos, from.length(), to);
+        return true;
+    }
+
+    //region split
+    vector<string> split(const string &s, const string &delimiter, bool do_trim) {
         size_t pos_start = 0, pos_end, delim_len = delimiter.length();
         string token;
         vector<string> res;
@@ -33,10 +45,17 @@ namespace utils {
         while ((pos_end = s.find(delimiter, pos_start)) != string::npos) {
             token = s.substr(pos_start, pos_end - pos_start);
             pos_start = pos_end + delim_len;
+            if (do_trim) {
+                token = trim(token);
+            }
             res.push_back(token);
         }
 
-        res.push_back(s.substr(pos_start));
+        string token_last = s.substr(pos_start);
+        if (do_trim) {
+            token_last = trim(token_last);
+        }
+        res.push_back(token_last);
         return res;
     }
 
@@ -77,15 +96,100 @@ namespace utils {
         return res;
     }
 
-//endregion
-
-    bool replace(string &str, const string &from, const string &to) {
-        size_t start_pos = str.find(from);
-        if (start_pos == std::string::npos)
-            return false;
-        str.replace(start_pos, from.length(), to);
-        return true;
+    //endregion
+    //region Trim
+    inline std::string trim(std::string &str) {
+        str.erase(str.find_last_not_of(' ') + 1);         //suffixing spaces
+        str.erase(0, str.find_first_not_of(' '));       //prefixing spaces
+        return str;
     }
+
+    string trimRegex(const string &s, const string &pattern) {
+        string result = regex_replace(s, regex("(^"+pattern+")|("+pattern+"$)"), "");
+        return result;
+    }
+    template<size_t N>
+    char *trimStart(char *sp, array<char *, N> &toTrim) {
+        size_t lengths[N];
+        for (int i = 0; i < N; ++i) {
+            lengths[i] = strlen(toTrim[i]);
+        }
+
+        bool started = true;
+        size_t s_len = strlen(sp);
+        while (started) {
+            started = false;
+            for (int i = 0; i < N; ++i) {
+                size_t ttLength = lengths[i];
+                while (ttLength <= s_len && strncmp(sp, toTrim[i], ttLength) == 0) {
+                    started = true;
+                    sp += ttLength;
+                    s_len -= ttLength;
+                }
+            }
+        }
+        return sp;
+    }
+
+    template<size_t N>
+    void trimStart(string &s, array<string, N> &toTrim) {
+        char *cs = new char[s.length()];
+        strcpy(cs, s.c_str());
+
+        array<char *, N> &toTrimC{};
+        for (int i = 0; i < N; ++i) {
+            toTrimC[i] = new char[toTrim[i].length()];
+            strcpy(toTrimC[i], toTrim[i]);
+        }
+        s = trimStart(cs, toTrimC);
+        delete[] cs;
+        for (int i = 0; i < N; ++i) {
+            delete[] toTrimC[i];
+        }
+
+    }
+
+    template<size_t N>
+    void trimEnd(string &s, array<string, N> &toTrim) {
+        size_t lengths[N];
+        for (string &trim: toTrim)
+            std::reverse(trim.begin(), trim.end());
+
+        std::reverse(s.begin(), s.end());
+
+        trimStart(s, toTrim);
+        std::reverse(s.begin(), s.end());
+    }
+
+    template<size_t N>
+    void trim(string &s, array<string, N> &toTrim) {
+        trimStart(s, toTrim);
+        trimEnd(s, toTrim);
+    }
+    //endregion
+
+    bool endsWithPunctuation(const string &line) {
+//        return punctuation.find_first_of(line[line.length()-1])!=-1;
+        return line.find_last_of(punctuation, line.length()) == line.length() - 1;
+    }
+
+    string getPunctuationAtEnd(const string &line) {
+        size_t pos = line.length();
+        while (pos > 0 && punctuation.contains(line[pos - 1]))
+            pos--;
+        return line.substr(pos);
+
+    }
+
+    char *string_to_char_array(string str) {
+        char *arr = new char[str.length() + 1];
+        std::strcpy(arr, str.c_str());
+        return arr;
+    }
+
+    // endregion
+    //region files & streams
+    map<int, FILE *> files;
 
     int unblock(int fd, int flags = -1) {
         if (flags == -1)
@@ -101,24 +205,37 @@ namespace utils {
         return flags;
     }
 
-    void BlockRead(int fd) {
+    FILE *open_file_timestamp(const string &filename) {
+        string timestamp = timeStamp("%Y-%m-%d_%H-%M-%S");
+        //    myString.assign(buffer);
+        ofstream myfile;
+        myfile.open(timestamp);
+        if (myfile.is_open()) {
+            cout << "created log file" << endl;
+        }
+        myfile.close();
+        return nullptr;
+    }
+
+
+    void blockRead(int fd) {
         vector<int> fds({fd});
-        BlockRead(fds);
+        blockRead(fds);
     }
 
 #pragma clang diagnostic push
 #pragma ide diagnostic ignored "EndlessLoop"
 
-    void BlockRead(const vector<int> &fds) {
+    void blockRead(const vector<int> &fds) {
         for ever {
             for (auto fd: fds)
-                MyFlush(fd, "block");
+                flushTo(fd, "block");
         }
     }
 
 #pragma clang diagnostic pop
 
-    string MyFlush(int fd, const string &prefix, bool do_block) {
+    string flushTo(int fd, const string &prefix, bool do_block) {
         ostringstream all;
         string line;
         auto process_line = [&all, &prefix](const string &s) {
@@ -169,7 +286,7 @@ namespace utils {
         return res;
     }
 
-    FILE *OpenFile(int fd) {
+    FILE *openFile(int fd) {
         auto iter = files.lower_bound(fd);
         if (iter == files.end() || fd < iter->first) {    // not found
             FILE *file = fdopen(fd, "r");
@@ -178,64 +295,22 @@ namespace utils {
         return files[fd];
     }
 
-    template<size_t N>
-    char *TrimStart(char *sp, array<char *, N> &toTrim) {
-        size_t lengths[N];
-        for (int i = 0; i < N; ++i) {
-            lengths[i] = strlen(toTrim[i]);
-        }
-
-        bool started = true;
-        size_t s_len = strlen(sp);
-        while (started) {
-            started = false;
-            for (int i = 0; i < N; ++i) {
-                size_t ttLength = lengths[i];
-                while (ttLength <= s_len && strncmp(sp, toTrim[i], ttLength) == 0) {
-                    started = true;
-                    sp += ttLength;
-                    s_len -= ttLength;
-                }
-            }
-        }
-        return sp;
+    void load(size_t dots, size_t max_dots) {
+        cout << "\rloading";
+        for (size_t i = 0; i < max_dots; i++)
+            cout << (i < dots ? "." : " ");
+        fflush(stdout);
     }
 
-    template<size_t N>
-    void TrimStart(string &s, array<string, N> &toTrim) {
-        char *cs = new char[s.length()];
-        strcpy(cs, s.c_str());
-
-        array<char *, N> &toTrimC{};
-        for (int i = 0; i < N; ++i) {
-            toTrimC[i] = new char[toTrim[i].length()];
-            strcpy(toTrimC[i], toTrim[i]);
-        }
-        s = TrimStart(cs, toTrimC);
-        delete[] cs;
-        for (int i = 0; i < N; ++i) {
-            delete[] toTrimC[i];
-        }
-
+    void endLoad(size_t max_dots) {
+        cout << "\r        ";
+        for (size_t i = 0; i < max_dots; i++)
+            cout << " ";
+        cout << endl;
+        fflush(stdout);
     }
 
-    template<size_t N>
-    void TrimEnd(string &s, array<string, N> &toTrim) {
-        size_t lengths[N];
-        for (string &trim: toTrim)
-            std::reverse(trim.begin(), trim.end());
-
-        std::reverse(s.begin(), s.end());
-
-        TrimStart(s, toTrim);
-        std::reverse(s.begin(), s.end());
-    }
-
-    template<size_t N>
-    void trim(string &s, array<string, N> &toTrim) {
-        TrimStart(s, toTrim);
-        TrimEnd(s, toTrim);
-    }
+    //endregion
 
     template<class T>
     size_t length(T *arr[]) {
@@ -246,29 +321,18 @@ namespace utils {
         return length;
     }
 
-
-    void load(size_t dots, size_t max_dots) {
-        cout << "\rloading";
-        for (size_t i = 0; i < max_dots; i++)
-            cout << (i < dots ? "." : " ");
-        fflush(stdout);
-    }
-
-    void EndLoad(size_t max_dots) {
-        cout << "\r        ";
-        for (size_t i = 0; i < max_dots; i++)
-            cout << " ";
-        cout << endl;
-        fflush(stdout);
-    }
-
     int to_int(const string &c) {
         //debug << "try to parse '" << c << "'" << endl;
         fflush(stdout);
         return stoi(c);
     }
 
-    regex GetPatternByTitle(vector<string> &format, const string &title) {
+    regex getPatternByTitle(vector<string> &format, const string &title) {
+//        if (title=="Text"){
+//            size_t n = format.size()-1;
+//            string pattern ="^(([^,]*,){" + to_string(n) + "})(.*)";
+//            return regex(pattern);
+//        }
         int text_index = (int) find_index(format, title);
         if (text_index < 0)
             return {};
@@ -291,10 +355,23 @@ namespace utils {
         return index;
     }
 
-    smatch GetRegex(const string &line, const regex &text_pattern) {
+    smatch getRegex(const string &line, const regex &text_pattern) {
         smatch sm_text;
         regex_match(line, sm_text, text_pattern);
         return sm_text;
+    }
+
+    vector<string> regexFindAll(const string &text, const string &pattern) {
+        vector<string> result;
+        std::smatch match;
+
+        string::const_iterator searchStart(text.cbegin());
+        std::regex p{pattern};
+        while (std::regex_search(searchStart, text.cend(), match, p)) {
+            result.push_back(match[0].str());
+            searchStart = match.suffix().first;
+        }
+        return result;
     }
 
     void error(const string &msg, int code) {
@@ -304,16 +381,23 @@ namespace utils {
             exit(code);
     }
 
-    bool endsWithPunctuation(const string &line) {
-
-        return line.find_last_of(punctuation, line.length()) == line.length() - 1;
+    string pwd() {
+        string cwd(get_cwd());
+        printf("[%d] PWD:%s\n", getpid(), cwd.c_str());
+        return cwd;
     }
 
-    string getPunctuationAtEnd(const string &line) {
-        size_t pos = line.length();
-        while (pos >0 && punctuation.contains(line[pos-1]))
-            pos--;
-        return line.substr(pos);
+    string get_cwd() {
+        char c_current_path[FILENAME_MAX];
 
+        if (!GetCurrentDir(c_current_path, sizeof(c_current_path))) {
+            exit(99);
+        }
+
+        c_current_path[sizeof(c_current_path) - 1] = '\0';
+        string cwd(c_current_path);
+        return cwd;
     }
+
+
 }

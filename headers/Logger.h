@@ -13,9 +13,8 @@ namespace logger {
     class Logger : public std::ostream {
     protected:
         NullBuffer m_nb;
-
     public:
-        explicit Logger(const std::string &name = "LOG");
+        explicit Logger(const std::string &name = "LOG", const std::string &filename = "");
     };
 }
 

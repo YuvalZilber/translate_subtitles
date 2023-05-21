@@ -5,5 +5,8 @@
 #include "../headers/Logger.h"
 
 namespace logger {
-    Logger::Logger(const std::string &name) : m_nb(name), std::ostream(&m_nb) {}
+    Logger::Logger(const std::string &name, const std::string &filename) :
+            m_nb(name, filename),
+            std::ostream(&m_nb) {}
+
 }

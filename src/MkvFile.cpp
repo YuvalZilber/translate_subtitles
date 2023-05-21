@@ -3,17 +3,18 @@
 //
 
 #include "../headers/MkvFile.h"
+#include "../headers/InteractiveShell.h"
 
 using namespace utils;
 
 MkvFile::MkvFile(Path &filepath) : filepath_(filepath) {
 }
 
-Path MkvFile::ChooseSubtitleFile() {
+Path MkvFile::chooseSubtitleFile() {
     if (sub_file_.empty()) {
-        string track_num = this->GetTrackNum();
-        if (track_num != "") {
-            return MkvExtract(track_num);
+        string trackNum = this->getTrackNum();
+        if (!trackNum.empty()) {
+            return mkvExtract(trackNum);
         }
     }
     return sub_file_;
@@ -24,30 +25,37 @@ typedef struct {
     string dialog;
 } track_option;
 
-string MkvFile::GetTrackNum() {
+string MkvFile::getTrackNum() {
     Path file{filepath_};
 
     cout << "\nloading...";
-    Path cur_sub_file("/");
+    Path curSubFile("/");
     vector<track_option> options;
-    for (size_t i = 0; !cur_sub_file.empty(); i++) {
+    for (size_t i = 0; !curSubFile.empty(); i++) {
         utils::load(i % 3 + 1);
-        cur_sub_file = MkvExtract(to_string(i));
-        string max_dialog = LongestDialog(cur_sub_file);
-        remove(cur_sub_file);
-        if (!max_dialog.empty()) {
-            options.push_back({i, max_dialog});
+        curSubFile = mkvExtract(to_string(i));
+        string maxDialog = longestDialog(curSubFile);
+        remove(curSubFile);
+        if (!maxDialog.empty()) {
+            options.push_back({i, maxDialog});
         }
     }
-    utils::EndLoad();
+    utils::endLoad();
     debug << "[" << getpid() << "] " << "finished mkvExtract(...)" << endl;
+    if (options.empty()) {
+        cerr << "no subtitle file found" << endl;
+        exit(1);
+    }
+    if (options.size() == 1) {
+        return to_string(options[0].index);
+    }
     cout << Font(Style::bold) << "Choose language or enter a subtitle filename" << Font::reset << endl;
     for (const auto &option: options) {
         cout << "O " << Font(Style::bold) << "[" << option.index << "] " << Font::reset << option.dialog << endl;
     }
     string line;
-    int track_num = -1;
-    while (track_num == -1) {
+    int trackNum = -1;
+    while (trackNum == -1) {
         cout << Font(Style::bold) << "your choice: " << Font::reset;
         line = utils::getUnboundedLine();
         if (exists(Path(line))) {
@@ -57,9 +65,9 @@ string MkvFile::GetTrackNum() {
         try {
             //todo: fix [1] case (with brackets).
             if (regex_match(line.c_str(), regex(R"(^\[?(\d+)\]?$)"))) {
-                track_num = to_int(line);
+                trackNum = to_int(line);
                 for (const auto &option: options) {
-                    if (option.index == track_num) {
+                    if (option.index == trackNum) {
                         found = true;
                         break;
                     }
@@ -76,127 +84,77 @@ string MkvFile::GetTrackNum() {
         }
 
         if (!found)
-            track_num = -1;
+            trackNum = -1;
     }
     return line;
 }
 
 
-string MkvFile::LongestDialog(Path &p) {
+string MkvFile::longestDialog(Path &p) {
     ifstream src(p);
     string line;
-    string max_dialog;
+    string maxDialog;
     vector<string> format;
-    regex text_pattern;
+    regex textPattern;
 
     while (getline(src, line)) {
         if (line[0] < 0 && line[0] != -17)
             break;
         if (line.starts_with("Format: ")) {
-            string sformat = split(line)[1];
+            string sformat = line.substr(line.find(' '));
             format = split(sformat, ",");
-            text_pattern = GetPatternByTitle(format, "Text");
+            textPattern = getPatternByTitle(format, "Text");
         } else if (line.starts_with("Dialogue: ")) {
-            auto reg = GetRegex(line, text_pattern);
+            auto reg = getRegex(line, textPattern);
             auto k = reg[3];
             string dialog{k};
             dialog = regex_replace(dialog, regex(R"(\{\\[^}]*\})"), "");
             if (dialog.contains("\\N") || dialog.contains("<"))
                 continue;
-            if (dialog.length() > max_dialog.length()) {
-                max_dialog = dialog;
+            if (dialog.length() > maxDialog.length()) {
+                maxDialog = dialog;
             }
         }
     }
-    return max_dialog;
+    return maxDialog;
 }
 
 
-Path MkvFile::MkvExtract(const string &si) {
+Path MkvFile::mkvExtract(const string &si) {
     int res = -1;
 
     Path p = filepath_.filename().replace_extension("ass");
     p = si + "_" + p.string();
-
-    string s1 = filepath_.string();
-    string s2 = (si + ":" + p.string());
-    char ss1[s1.length()];
-    strcpy(ss1, s1.c_str());
-    char ss2[s2.length()];
-    strcpy(ss2, s2.c_str());
-    debug << "PATH:" << getenv("PATH") << endl;
-    string pathh = "/usr/local/bin/";
-    char *scmds[] = {(char *) "mkvextract", ss1, (char *) "tracks", ss2, (char *) "-r", (char *) "debug.log", nullptr};
-//    char *cmd = to_system_cmd(scmds);
-//    string scmd = cmd;
 #ifdef WIN32
     int success = spawnv(P_WAIT, s_compiler.c_str(), argv);
 #else
-    pid_t pid;
-    char out[] = "mkvextract_stdout.log";
-    char err[] = "mkvextract_stderr.log";
-    int bu_out;
-    int bu_err;
-    FILE *n_out, *n_err;
+    string out = utils::logFilename("mkvextract_stdout");
+    string err = utils::logFilename("mkvextract_stderr");
     vector<string> paths;
     debug << "[" << to_string(getpid()) << "] " << "from pid:" << getpid() << endl;
-    switch (pid = fork()) {
-        case -1:
-            error("Error using fork()");
-            break;
-        case 0:
-            debug << "[" << to_string(getpid()) << "] " << "#child start " << endl;
+    const string &logFile = utils::logFilename("debug");
+    const string &cmd = "mkvextract \"" + filepath_.string() + "\" tracks " + si + ":" + p.string() + " -r " + logFile;
+    InteractiveShell shell(cmd, "", out, err);
+    pid_t pid = shell.shellPid;
+    if (getpid() != shell.shellPid) {
+        // parent
+        res = shell.wait();
+    } else {
+        // child ERROR
+        debug_mode = true;
+        debug << "[" << getpid() << "] " << "#execvp mkvextract ERROR! " << errno << endl;
+        debug << "[ERR] Please,, make sure that the 'mkvextract' executable is in one of the following paths:"
+              << endl;
+        paths = utils::split(getenv("PATH"), ":");
 
-            mkstemp(out);
-            mkstemp(err);
-            bu_out = dup(STDOUT_FILENO);
-            bu_err = dup(STDERR_FILENO);
-            close(STDOUT_FILENO);
-            close(STDERR_FILENO);
-            n_out = fopen(out, "w");
-            n_err = fopen(err, "w");
+        for (const auto &path_0: paths) {
+            debug << path_0 << endl;
+        }
 
-            execvp(scmds[0], scmds);
-            debug << "[" << getpid() << "] " << "#execvp mkvextract ERROR! " << errno << endl;
-            debug << "Please,, make sure that the mkvextract executable is in one of the following paths:" << endl;
-            paths = utils::split(getenv("PATH"), ":");
-
-            for (const auto &path_0: paths) {
-                cout << path_0 << endl;
-            }
-            fclose(n_out);
-            fclose(n_err);
-            close(STDOUT_FILENO);
-            close(STDERR_FILENO);
-            dup(bu_out);
-            dup(bu_err);
-            close(bu_out);
-            close(bu_err);
-            debug << "[" << getpid() << "] " << "#execvp mkvextract ERROR! " << errno << endl;
-            cout << "Command mkvextract not found" << endl;
-            cout << "Please, make sure that the mkvextract executable is in one of the following paths:" << endl;
-            paths = utils::split(getenv("PATH"), ":");
-
-            for (const auto &path_0: paths) {
-                cout << path_0 << endl;
-            }
-            error("mkvextract couldn't run", errno);
-            break;
-        default:
-            debug << "[" << getpid() << "] " << "parent start wait(...)==" << pid << endl;
-            int status;
-            int waited = wait(&status);
-            debug << "[" << getpid() << "] " << "parent end wait(" << status << ")=" << waited;
-
-            if (waited != pid) {
-                debug << "[" << getpid() << "] " << "did it?" << endl;
-                error("Error using wait(" + to_string(status) + ")");
-            }
-            debug << "[" << getpid() << "] " << "did it!" << endl;
-            res = WEXITSTATUS(status);
-            debug << "[" << getpid() << "] " << "res: " << res << endl;
-
+        debug << "[" << getpid() << "] " << "#execvp mkvextract ERROR! " << errno << endl;
+        error("mkvextract couldn't run", errno);
     }
+
 #endif
 //    delete[] (cmd);
     if (res == 0)
@@ -205,7 +163,7 @@ Path MkvFile::MkvExtract(const string &si) {
         return Path();
 }
 
-string MkvFile::get_digits_of_choice(const string &choice) {
+string MkvFile::getDigitsOfChoice(const string &choice) {
     regex pattern{R"(^\[?(\d+)\]?$)"};
     smatch match;
     if (regex_match(choice, match, pattern))
