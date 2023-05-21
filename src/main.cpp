@@ -5,10 +5,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <regex>
-#include <chrono>
 #include <array>
-#include <thread>
-#include <cstdio>  /* defines FILENAME_MAX */
 
 #ifdef WINDOWS
 #include <direct.h>
@@ -23,6 +20,7 @@
 #include "../headers/font.h"
 #include "../headers/MkvFile.h"
 #include "../headers/Vlc.h"
+
 #define GetCurrentDir getcwd
 #endif
 using namespace std;
@@ -30,145 +28,16 @@ namespace me = this_thread;
 using namespace utils;
 using namespace logger;
 
-#define BUF_SIZE 1<<10
-
 Path file2trans;
 Path sub_file;
 
-void step1_extract_all_tracks_of_sample(const string &path);
-
-vector<Path> get_eng_sub_paths(const char *src);
-
-void step2(const vector<Path> &paths, const char *track_num);
-
-Path mkvExtract(const Path &path, size_t si);
-
-Path mkvExtract(const Path &path, const string &si);
-
 void step3_translate(Vlc vlc, const string &t);
-
-std::string string_to_hex(const std::string &input);
 
 void process_break_line(string &origin, string &translation);
 
-template<class T>
-void print_vector(const vector<T> &hhmmss_stop);
-
-
-const std::ofstream devnull("/dev/null", std::ofstream::out | std::ofstream::app);
-FILE *devnull_f;
-
-
 vector<int> getVector(const string &line, regex &time_pattern);
 
-string getRegexS(const string &line, const regex &text_pattern);
-
-
-int vlc_get_time(Vlc vlc);
-
 string flipPunctuationIfNeeded(size_t n, const vector<string> &lines);
-
-int vlc_get_time(Vlc vlc) {
-    string cur_s;
-    vlc.sendCommand("get_time", &cur_s);
-    cur_s = regex_replace(cur_s, regex("^\\D+"), "");
-    if (cur_s.empty())
-        return -1;
-    return to_int(cur_s);
-}
-
-int pipe_to_vlc[2];
-int pipe_out_vlc[2];
-
-
-const std::ostream &debug1() {
-    if (debug_mode)
-        return cerr << "[DEBUG] ";
-    return devnull;
-}
-
-
-int getDialogLine(Path &p) {
-    ifstream src(p);
-    string line;
-    bool has_dialog = false;
-    size_t match = 0;
-    size_t max = 0;
-    std::regex const eng("[a-zA-Z]");
-    std::regex const text(R"(([^0-9:,.\]\\: '\"]))");
-    while (getline(src, line)) {
-        if (line[0] < 0 && line[0] != -17)
-            return 0;
-        if (line.starts_with("Dialogue: ")) {
-            has_dialog = true;
-
-            std::ptrdiff_t const c_eng(std::distance(
-                    std::sregex_iterator(line.begin(), line.end(), eng),
-                    std::sregex_iterator()));
-            std::ptrdiff_t const c_tex(std::distance(
-                    std::sregex_iterator(line.begin(), line.end(), text),
-                    std::sregex_iterator()));
-            if (c_eng == c_tex)
-                match++;
-            max++;
-        }
-    }
-    fs::remove(p);
-    if (!has_dialog)
-        return 0;
-    return (double) match * 1000 / max;
-}
-
-int rateEngSub(Path &p) {
-    ifstream src(p);
-    string line;
-    bool has_dialog = false;
-    size_t match = 0;
-    size_t max = 0;
-    std::regex const eng("[a-zA-Z]");
-    std::regex const text(R"([^0-9:,.\]\\: '\"])");
-    while (getline(src, line)) {
-        if (line[0] < 0 && line[0] != -17)
-            return 0;
-        if (line.starts_with("Dialogue: ")) {
-            has_dialog = true;
-
-            std::ptrdiff_t const c_eng(std::distance(
-                    std::sregex_iterator(line.begin(), line.end(), eng),
-                    std::sregex_iterator()));
-            std::ptrdiff_t const c_tex(std::distance(
-                    std::sregex_iterator(line.begin(), line.end(), text),
-                    std::sregex_iterator()));
-            if (c_eng == c_tex)
-                match++;
-            max++;
-        }
-    }
-    fs::remove(p);
-    if (!has_dialog)
-        return 0;
-    return (double) match * 1000 / max;
-}
-
-
-char *to_system_cmd(char *args[]) {
-    size_t sum_size = 0;
-    for (int i = 0; args[i] != nullptr; ++i) {
-        sum_size += strlen(args[i]);
-        sum_size++;
-    }
-    char *cmd = new char[sum_size];
-    char *p = cmd;
-    for (int i = 0; args[i] != nullptr; ++i) {
-        char *arg = args[i];
-        size_t size = strlen(arg);
-        memcpy(p, arg, size);
-        p += size;
-        *(p++) = ' ';
-    }
-    *(p - 1) = '\0';
-    return cmd;
-}
 
 Path getVideoFile() {
     while (!fs::exists(file2trans)) {
@@ -220,7 +89,6 @@ Path getSubFile() {
 
 int main(int argc, char *argv[]) {
     output = utils::pwd();
-    devnull_f = fopen("/dev/null", "w+");
     for (int i = 0; i < argc; ++i) {
         string arg = argv[i];
         if (arg == "-d" || arg == "--debug")
@@ -260,7 +128,6 @@ int main(int argc, char *argv[]) {
     }
 
 
-
     string fn_s = getVideoFile();
     string sfn_s = getSubFile();
 
@@ -269,9 +136,7 @@ int main(int argc, char *argv[]) {
     int pidp = getpid();
     debug << "pid parent: " << to_string(pidp) << "\n";
     sleep(3);
-    string response;
-
-    vlc.sendCommand("help", &response);
+    string response = vlc.help();
     cout << response << endl;
     step3_translate(vlc, "heb_sub.ass");
 
@@ -354,35 +219,31 @@ void step3_translate(Vlc vlc, const string &t) {
                     time_to_play_to_2--;
                 string translation;
                 TRANSLATE:
-                cur = vlc_get_time(vlc);
+                cur = vlc.get_time();
 
                 cout << Font(Color::yellow) << "[" << getRegex(line, time_pattern)[3] << "] - ";
                 cout << "[" << getRegex(line, stop_pattern)[3] << "]" << Font::reset << endl;
                 cout << Font(Color::cyan) << "[# - exit, $ - replay, ^ - undo last line]" << Font::reset << endl;
                 cout << sm_text[3] << endl;
                 if ((!translation.starts_with("$")) && (time_to_play_to_1 < cur || cur + 12 < time_to_play_to_1))
-                    vlc.sendCommand("seek " + to_string(time_to_play_to_1));
+                    vlc.seek(time_to_play_to_1);
 //                    this_thread::sleep_for(milliseconds(250));
 
-                cur = vlc_get_time(vlc);
-                vlc.sendCommand("play");
-                std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
-                debug << "sleep for " << to_string(time_to_play_to_2 - cur) << "s" << endl;
-                sleep(time_to_play_to_2 - cur);
+                cur = vlc.get_time();
+                int play_time = (time_to_play_to_2 - cur) * 1000;
                 if (hhmmss_start[2] == hhmmss_end[2]) {
-                    this_thread::sleep_for(chrono::milliseconds((hhmmss_start[3] + 1) * 10));
+                    play_time += (hhmmss_start[3] + 1) * 10;
                 }
-                vlc.sendCommand("pause");
-                //vlc.SendCommand("seek " + to_string(time_to_play_to_2));
+                vlc.play_for(play_time);
 
                 translation = utils::getUnboundedLine();
                 if (translation.starts_with("$")) {
-                    cur = vlc_get_time(vlc);
+                    cur = vlc.get_time();
 
                     int requested = atoi(translation.substr(1).c_str());
                     int time_to_rewind = requested ? requested : 10;
                     time_to_rewind = min(time_to_rewind, cur);
-                    vlc.sendCommand("seek " + to_string(cur - time_to_rewind));
+                    vlc.seek(cur - time_to_rewind);
                     goto TRANSLATE;
                 } else if (translation.starts_with("#")) {
                     break;
@@ -425,19 +286,9 @@ void step3_translate(Vlc vlc, const string &t) {
         if (!trg.is_open())
             cerr << "couldn't open trg '" << filename_trg << "'" << endl;
     }
-    vlc.sendCommand("quit");
+    vlc.quit();
     cout << "bye!" << endl;
 }
-
-string getRegexS(const string &line, const regex &text_pattern) {
-    smatch sm_text;
-    regex_match(line, sm_text, text_pattern);
-    string s;
-    for (auto p: sm_text)
-        s += p.str();
-    return s;
-}
-
 
 vector<int> getVector(const string &line, regex &time_pattern) {
     smatch sm_time;
