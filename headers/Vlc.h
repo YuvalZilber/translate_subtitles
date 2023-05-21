@@ -12,7 +12,6 @@ class Vlc : public InteractiveShell {
 public:
     Vlc(const std::string &videoFile, const std::string &subtitle_file);
 
-
     int get_time();
 
     void seek(int time);
