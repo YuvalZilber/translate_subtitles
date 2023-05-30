@@ -25,21 +25,33 @@
 
 class InteractiveShell {
 public:
-    explicit InteractiveShell(const std::string &cmd, std::string in="", std::string out="", std::string err="");
+    explicit InteractiveShell(const std::string &cmd, std::string in = "", std::string out = "", std::string err = "");
+
+    InteractiveShell(const InteractiveShell &other) = default;
+
+    InteractiveShell(InteractiveShell &&other) noexcept;
+
+    InteractiveShell &operator=(InteractiveShell other);
+
+    InteractiveShell &operator=(InteractiveShell &&other) noexcept;
+
+    virtual ~InteractiveShell();
 
 #pragma clang diagnostic push
 #pragma ide diagnostic ignored "google-default-arguments"
 
-    virtual std::string *sendCommand(const std::string &cmd, std::string *response = nullptr);
+    virtual std::string *sendCommand(const std::string &cmd, std::string *response = nullptr) const;
 
 #pragma clang diagnostic pop
 
     int shellPid;
     int parentPid;
 
-    int wait();
+    [[nodiscard]] int wait() const;
 
 private:
+
+    InteractiveShell();
 
     void initShell(const string &cmd);
 
@@ -56,6 +68,14 @@ private:
     static void childTransferStdStream(FILE *fd, const int *new_pipe, int side_to_use, const std::string &filename);
 
     static void closeUnusedSideOfPipe(const int *new_pipe, int side_to_use);
+
+    static void freeArray(int *&arr);
+
+    void swap(InteractiveShell &other);
+
+    static void swap(InteractiveShell &a, InteractiveShell &b) {
+        a.swap(b);
+    }
 };
 
 

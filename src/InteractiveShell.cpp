@@ -7,7 +7,6 @@
 
 #include "InteractiveShell.h"
 
-
 InteractiveShell::InteractiveShell(const std::string &cmd, std::string in, std::string out, std::string err) :
         shellPid(-1),
         parentPid(getpid()),
@@ -26,13 +25,13 @@ InteractiveShell::InteractiveShell(const std::string &cmd, std::string in, std::
 void InteractiveShell::initShell(const string &cmd) {
     debug << "InteractiveShell - create: " << cmd << endl;
     debug << "cwd: " << utils::get_cwd() << endl;
-    char **cmd_array = split_cmd(cmd);
 
     pid_t pid = fork();
-    if(pid==-1){
-        utils::error("couldn't fork:"+cmd);
+    if (pid == -1) {
+        utils::error("couldn't fork:" + cmd);
     }
     if (pid == 0) {
+        char **cmd_array = split_cmd(cmd);
         debug << "pid child: " << to_string(getpid()) << endl;
         shellPid = getpid();
         childTransferStdStream(stdin, shell_in, READ, file_std_in);
@@ -40,7 +39,9 @@ void InteractiveShell::initShell(const string &cmd) {
         childTransferStdStream(stderr, shell_err, WRITE, file_std_err);
 
         int res = execvp(cmd_array[0], cmd_array);
-        debug << "ERROR!!!" << res;
+        debug << "ERROR!!! " << res << endl;
+
+
     } else {
         debug << "pid parent: " << to_string(getpid()) << endl;
         shellPid = pid;
@@ -68,7 +69,7 @@ void InteractiveShell::closeUnusedSideOfPipe(const int *new_pipe, int side_to_us
 }
 
 char **InteractiveShell::split_cmd(const string &cmd) {
-    string pattern = "(\"[^\"]*\")|('[^']*')|([^ ]+)";
+    string pattern = R"(("[^"]*")|('[^']*')|([^ ]+))";
     smatch match;
 
     vector<string> cmd_vector = utils::regexFindAll(cmd, pattern);
@@ -84,7 +85,7 @@ char **InteractiveShell::split_cmd(const string &cmd) {
 }
 
 std::string *
-InteractiveShell::sendCommand(const string &cmd, std::string *response) { // NOLINT(google-default-arguments)
+InteractiveShell::sendCommand(const string &cmd, std::string *response) const { // NOLINT(google-default-arguments)
     write(shell_in[WRITE], (cmd + "\n").c_str(), cmd.length() + 1);
     fflush(stderr);
     if (response == nullptr) {
@@ -95,24 +96,76 @@ InteractiveShell::sendCommand(const string &cmd, std::string *response) { // NOL
     return response;
 }
 
-int InteractiveShell::wait() {
-    if(getpid()!=parentPid)
+int InteractiveShell::wait() const {
+    if (getpid() != parentPid)
         utils::error("Illegel state! only the parent of the shell is allowed to wait for it");
     int res;
 
-    debug << "[" << getpid() << "] " << "parent start wait(...)==" << shellPid << endl;
+    debug << "[" << to_string(getpid()) << "] " << "parent start wait(...)==" << to_string(shellPid) << endl;
     int status;
     int waited = ::wait(&status);
-    debug << "[" << getpid() << "] " << "parent end wait(" << status << ")=" << waited;
+    debug << "[" << to_string(getpid()) << "] " << "parent end wait(" << to_string(status) << ")=" << to_string(waited)
+          << endl;
 
     if (waited != shellPid) {
-        debug << "[" << getpid() << "] " << "did it?" << endl;
+        debug << "[" << to_string(getpid()) << "] " << "did it?" << endl;
         utils::error("Error using wait(" + to_string(status) + ")");
     }
-    debug << "[" << getpid() << "] " << "did it!" << endl;
+    debug << "[" << to_string(getpid()) << "] " << "did it!" << endl;
     res = WEXITSTATUS(status);
-    debug << "[" << getpid() << "] " << "res: " << res << endl;
+    debug << "[" << to_string(getpid()) << "] " << "res: " << to_string(res) << endl;
     return res;
+}
+
+InteractiveShell::~InteractiveShell() {
+    freeArray(shell_in);
+    freeArray(shell_out);
+    freeArray(shell_err);
+}
+
+void InteractiveShell::freeArray(int *&arr) {
+    if (arr) {
+        delete[] arr;
+        arr = nullptr;
+    }
+}
+
+
+InteractiveShell::InteractiveShell(InteractiveShell &&other) noexcept:
+        InteractiveShell() {
+    swap(other);
+}
+
+InteractiveShell &InteractiveShell::operator=(InteractiveShell other) {
+    swap(*this, other);  // trade our resources for x's
+    return *this;    // our (old) resources get destroyed with x
+}
+
+InteractiveShell &InteractiveShell::operator=(InteractiveShell &&other) noexcept {
+    swap(*this, other);  // trade our resources for x's
+    return *this;
+}
+
+void InteractiveShell::swap(InteractiveShell &other) {
+    std::swap(shell_in, other.shell_in);
+    std::swap(shell_out, other.shell_out);
+    std::swap(shell_err, other.shell_err);
+    std::swap(shellPid, other.shellPid);
+    std::swap(parentPid, other.parentPid);
+    std::swap(file_std_in, other.file_std_in);
+    std::swap(file_std_out, other.file_std_out);
+    std::swap(file_std_err, other.file_std_err);
+}
+
+InteractiveShell::InteractiveShell() : shellPid(),
+                                       parentPid(),
+                                       shell_in(),
+                                       shell_out(),
+                                       shell_err(),
+                                       file_std_in(),
+                                       file_std_out(),
+                                       file_std_err() {
+
 }
 
 

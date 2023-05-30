@@ -12,23 +12,24 @@ class Vlc : public InteractiveShell {
 public:
     Vlc(const std::string &videoFile, const std::string &subtitle_file);
 
-    int get_time();
+    int get_time() const;
 
-    void seek(int time);
+    void seek(int time) const;
 
-    void play();
+    void play() const;
 
-    void pause();
+    void pause() const;
 
-    void play_for(int time);
+    void play_for(int time) const;
 
-    void quit();
+    void quit() const;
 
-    string help();
+    string help() const;
 
 private:
     std::string *
-    sendCommand(const std::string &cmd, std::string *response = nullptr) override; // NOLINT(google-default-arguments)
+    sendCommand(const std::string &cmd,
+                std::string *response = nullptr) const override; // NOLINT(google-default-arguments)
 
 };
 

@@ -41,7 +41,7 @@ string MkvFile::getTrackNum() {
         }
     }
     utils::endLoad();
-    debug << "[" << getpid() << "] " << "finished mkvExtract(...)" << endl;
+    debug << "[" << to_string(getpid()) << "] " << "finished mkvExtract(...)" << endl;
     if (options.empty()) {
         cerr << "no subtitle file found" << endl;
         exit(1);
@@ -131,7 +131,7 @@ Path MkvFile::mkvExtract(const string &si) {
     string out = utils::logFilename("mkvextract_stdout");
     string err = utils::logFilename("mkvextract_stderr");
     vector<string> paths;
-    debug << "[" << to_string(getpid()) << "] " << "from pid:" << getpid() << endl;
+    debug << "[" << to_string(getpid()) << "] " << "from pid:" << to_string(getpid()) << endl;
     const string &logFile = utils::logFilename("debug");
     const string &cmd = "mkvextract \"" + filepath_.string() + "\" tracks " + si + ":" + p.string() + " -r " + logFile;
     InteractiveShell shell(cmd, "", out, err);
@@ -142,7 +142,7 @@ Path MkvFile::mkvExtract(const string &si) {
     } else {
         // child ERROR
         debug_mode = true;
-        debug << "[" << getpid() << "] " << "#execvp mkvextract ERROR! " << errno << endl;
+        debug << "[" << to_string(getpid()) << "] " << "#execvp mkvextract ERROR! " << to_string(errno) << endl;
         debug << "[ERR] Please,, make sure that the 'mkvextract' executable is in one of the following paths:"
               << endl;
         paths = utils::split(getenv("PATH"), ":");
@@ -151,8 +151,8 @@ Path MkvFile::mkvExtract(const string &si) {
             debug << path_0 << endl;
         }
 
-        debug << "[" << getpid() << "] " << "#execvp mkvextract ERROR! " << errno << endl;
-        error("mkvextract couldn't run", errno);
+        debug << "[" << to_string(getpid()) << "] " << "#execvp mkvextract ERROR! " << to_string(errno) << endl;
+        error("mkvextract couldn'targetFile run", errno);
     }
 
 #endif

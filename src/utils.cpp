@@ -105,9 +105,10 @@ namespace utils {
     }
 
     string trimRegex(const string &s, const string &pattern) {
-        string result = regex_replace(s, regex("(^"+pattern+")|("+pattern+"$)"), "");
+        string result = regex_replace(s, regex("(^" + pattern + ")|(" + pattern + "$)"), "");
         return result;
     }
+
     template<size_t N>
     char *trimStart(char *sp, array<char *, N> &toTrim) {
         size_t lengths[N];
