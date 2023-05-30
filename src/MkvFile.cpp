@@ -2,8 +2,8 @@
 // Created by Yuval Zilber on 09/03/2023.
 //
 
-#include "../headers/MkvFile.h"
-#include "../headers/InteractiveShell.h"
+#include "MkvFile.h"
+#include "InteractiveShell.h"
 
 using namespace utils;
 

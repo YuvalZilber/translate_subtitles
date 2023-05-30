@@ -2,7 +2,7 @@
 // Created by Yuval Zilber on 09/03/2023.
 //
 
-#include "../headers/base_consts.h"
+#include "base_consts.h"
 
 using namespace std;
 

@@ -9,16 +9,16 @@
 #include <array>
 #include <chrono>
 #include <regex>
-#include "../headers/Vlc.h"
-#include "../headers/MkvFile.h"
-#include "../headers/font.h"
+#include "Vlc.h"
+#include "MkvFile.h"
+#include "font.h"
 #include <fstream>
 #include <cstdlib>
 #include <filesystem>
 #include <string>
 #include <vector>
 #include <iostream>
-#include "../headers/utils.h"
+#include "utils.h"
 
 #define ever (;;)
 

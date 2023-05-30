@@ -2,7 +2,7 @@
 // Created by yuvalzilber on 5/16/23.
 //
 
-#include "../headers/Vlc.h"
+#include "Vlc.h"
 
 
 Vlc::Vlc(const string &videoFile, const string &subtitle_file) :

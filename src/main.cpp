@@ -15,11 +15,12 @@
 #include <unistd.h>
 #include <wait.h>
 
-#include "../headers/consts.h"
+#include "consts.h"
 
-#include "../headers/font.h"
-#include "../headers/MkvFile.h"
-#include "../headers/Vlc.h"
+#include "font.h"
+#include "MkvFile.h"
+#include "Vlc.h"
+#include "MainOptions.h"
 
 #define GetCurrentDir getcwd
 #endif
@@ -28,10 +29,7 @@ namespace me = this_thread;
 using namespace utils;
 using namespace logger;
 
-Path file2trans;
-Path sub_file;
-
-void step3_translate(Vlc vlc, const string &t);
+void step3_translate(Vlc vlc, const string &filename_src, const string &t);
 
 void process_break_line(string &origin, string &translation);
 
@@ -39,10 +37,18 @@ vector<int> getVector(const string &line, regex &time_pattern);
 
 string flipPunctuationIfNeeded(size_t n, const vector<string> &lines);
 
-Path getVideoFile() {
+Path getVideoFile(const MainOptions &args) {
+    Path file2trans;
+    MainOptions::Option *p = args.getParamFromKeys("v", "vid", "video");
+
+    file2trans = p ? p->second : "";
+    if (file2trans.empty() && !args.namelessValues_.empty()) {
+        file2trans = args.namelessValues_[0];
+    }
+
     while (!fs::exists(file2trans)) {
         if (!file2trans.empty())
-            cerr << "Can't find file " << file2trans << endl;
+            cerr << "Can't find file '" << file2trans << "'" << endl;
         cout << Font(Style::bold) << "file to translate: " << Font::reset;
         file2trans = utils::getUnboundedLine();
     }
@@ -50,86 +56,56 @@ Path getVideoFile() {
 }
 
 
-bool isValidSubtitleFile(const Path &subs, bool error_not_exists = true) {
+bool isValidSubtitleFile(Path &subs, bool error_not_exists = true) {
     if (!exists(subs)) {
         if (error_not_exists && !subs.empty())
-            cerr << "Can't find file '" << sub_file << "'" << endl;
+            cerr << "Can't find file '" << subs << "'" << endl;
         return false;
     }
-    if (MkvFile::longestDialog(sub_file).empty()) {
-        error("the file '" + sub_file.string() + "' is not a valid subtitle file format", 0);
+    if (MkvFile::longestDialog(subs).empty()) {
+        error("the file '" + subs.string() + "' is not a valid subtitle file format", 0);
         return false;
     }
     return true;
 }
 
-Path getSubFileRaw() {
-    while (!isValidSubtitleFile(sub_file)) {
+Path getSubFileRaw(Path &subs) {
+    while (!isValidSubtitleFile(subs)) {
         cout << Font(Style::bold) << "subtitle file: " << Font::reset;
-        sub_file = utils::getUnboundedLine();
+        subs = utils::getUnboundedLine();
     }
-    return sub_file;
+    return subs;
 }
 
-Path getSubFile() {
-    Path file = getVideoFile();
+Path getSubFile(const MainOptions &args, Path video) {
+
+    Path sub_file;
+    MainOptions::Option *p = args.getParamFromKeys("s", "sub", "subs", "ass", "subtitle", "subtitles");
+
+    sub_file = p ? p->second : "";
+
+
     if (!exists(sub_file)) {
-        file = getVideoFile();
-        string ext = file.extension().string();
+        string ext = video.extension().string();
         if (ext == ".mkv") {
-            MkvFile mkv{file};
+            MkvFile mkv{video};
             sub_file = mkv.chooseSubtitleFile();
-
         }
-        getSubFileRaw();
+        sub_file = getSubFileRaw(sub_file);
     }
     return sub_file;
 }
-
 
 int main(int argc, char *argv[]) {
+
+    MainOptions args(argc, argv);
     output = utils::pwd();
-    for (int i = 0; i < argc; ++i) {
-        string arg = argv[i];
-        if (arg == "-d" || arg == "--debug")
-            debug_mode = true;
-        if (arg == "-s" || arg == "--sub-file") {
-            if (argc < i + 1)
-                error("expected subtitle file after " + arg + " option");
-            sub_file = argv[++i];
-            if (!fs::exists(sub_file)) {
-                error("Couldn't find subtitles file '" + sub_file.string() + "'", 0);
-                sub_file = "";
-            } else if (MkvFile::longestDialog(sub_file).empty())
-                error("the file '" + sub_file.string() + "' is not a valid subtitle file format");
-        }
-        if (arg == "-v" || arg == "--vid-file") {
-            if (argc < i + 1)
-                error("expected video file after " + arg + " option");
-            file2trans = argv[++i];
-            if (!fs::exists(file2trans))
-                error("Couldn't find video file '" + file2trans.string() + "'");
-            else
-                cout << "[SUC] Chose file " << file2trans << endl;
-        }
-        if (arg == "-p") {
-            if (fs::exists("heb_sub1.ass")) {
-                if (fs::exists("try.ass"))
-                    fs::remove("try.ass");
-                fs::copy("heb_sub1.ass", "try.ass");
-            } else if (fs::exists("heb_sub1.ass")) {
-                if (fs::exists("try.ass"))
-                    fs::remove("try.ass");
-                fs::copy("heb_sub1.ass", "heb_sub1.ass");
-                fs::rename("heb_sub1.ass", "try.ass");
-            }
-            sub_file = "try.ass";
-        }
-    }
+    Path file2trans;
+    debug_mode = args.hasOneOfKeys("d", "debug");
 
 
-    string fn_s = getVideoFile();
-    string sfn_s = getSubFile();
+    Path fn_s = getVideoFile(args);
+    Path sfn_s = getSubFile(args, fn_s);
 
     Vlc vlc = Vlc(fn_s, sfn_s);
 
@@ -138,15 +114,14 @@ int main(int argc, char *argv[]) {
     sleep(3);
     string response = vlc.help();
     cout << response << endl;
-    step3_translate(vlc, "heb_sub.ass");
+    step3_translate(vlc, sfn_s, "heb_sub.ass");
 
     wait(nullptr);
     return 0;
 }
 
 
-void step3_translate(Vlc vlc, const string &t) {
-    const string filename_src = getSubFile();
+void step3_translate(Vlc vlc, const string &filename_src, const string &t) {
     const string &filename_trg = t;
 
     cout << filename_trg << endl;
@@ -240,7 +215,7 @@ void step3_translate(Vlc vlc, const string &t) {
                 if (translation.starts_with("$")) {
                     cur = vlc.get_time();
 
-                    int requested = atoi(translation.substr(1).c_str());
+                    int requested = atoi(translation.substr(1).c_str()); // NOLINT(cert-err34-c)
                     int time_to_rewind = requested ? requested : 10;
                     time_to_rewind = min(time_to_rewind, cur);
                     vlc.seek(cur - time_to_rewind);
@@ -332,7 +307,6 @@ void process_break_line(string &origin, string &translation) {
         }
     }
 
-    string to_trim[] = {"\n", " ", "\\N"};
     translation = regex_replace(translation, regex(R"((^(\s|\\N)+)|((\s|\\N)+$))"), "");
 
     if (endsWithPunctuation(origin) && !endsWithPunctuation(translation))
@@ -342,6 +316,9 @@ void process_break_line(string &origin, string &translation) {
     string res = flipPunctuationIfNeeded(n, lines);
     translation = res;
 }
+
+#pragma clang diagnostic push
+#pragma ide diagnostic ignored "Simplify"
 
 string flipPunctuationIfNeeded(size_t n, const vector<string> &lines) {
     string res;
@@ -369,6 +346,8 @@ string flipPunctuationIfNeeded(size_t n, const vector<string> &lines) {
     }
     return res;
 }
+
+#pragma clang diagnostic pop
 
 
 

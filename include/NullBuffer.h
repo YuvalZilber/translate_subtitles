@@ -7,8 +7,8 @@
 
 #include <iostream>
 #include <string>
-#include "../headers/base_consts.h"
-#include "../headers/base_utils.h"
+#include "base_consts.h"
+#include "base_utils.h"
 
 namespace logger {
     class NullBuffer : public std::streambuf {

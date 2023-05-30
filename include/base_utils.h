@@ -31,7 +31,9 @@
 
 namespace base_utils {
     std::string timeStamp(const char*format="%d-%m-%Y %H:%M:%S") ;
-    std::string logFilename(const char*base_name);
+    std::string logFilename(const char *base_name);
+
+    void tolower(std::string &);
 }
 
 

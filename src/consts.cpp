@@ -2,7 +2,7 @@
 // Created by Yuval Zilber on 09/03/2023.
 //
 
-#include "../headers/consts.h"
+#include "consts.h"
 
 using namespace std;
 using namespace logger;

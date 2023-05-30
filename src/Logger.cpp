@@ -2,7 +2,7 @@
 // Created by Yuval Zilber on 10/03/2023.
 //
 
-#include "../headers/Logger.h"
+#include "Logger.h"
 
 namespace logger {
     Logger::Logger(const std::string &name, const std::string &filename) :

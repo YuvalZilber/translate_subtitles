@@ -2,7 +2,7 @@
 // Created by Yuval Zilber on 07/03/2023.
 //
 
-#include "../headers/font.h"
+#include "font.h"
 
 #include <utility>
 

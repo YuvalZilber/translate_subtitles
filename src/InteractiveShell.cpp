@@ -5,7 +5,7 @@
 #include <utility>
 #include <strstream>
 
-#include "../headers/InteractiveShell.h"
+#include "InteractiveShell.h"
 
 
 InteractiveShell::InteractiveShell(const std::string &cmd, std::string in, std::string out, std::string err) :
