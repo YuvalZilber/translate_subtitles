@@ -21,11 +21,17 @@ private:
 
     static void process_break_line(string &origin, string &translation);
 
-    static string flipPunctuationIfNeeded(size_t n, const vector<string> &lines);
+    static string flipPunctuationIfNeeded(const string &translation);
 
     const Vlc &player;
     const Path subtitleFile;
     const Path targetFile;
+
+    static string &breakLineIfNeeded(const string &origin, string &translation);
+
+    static bool multiTrimQuotes(string &origin);
+
+    static string quoteAllLines(const string &translation);
 };
 
 

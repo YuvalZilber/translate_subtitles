@@ -152,7 +152,7 @@ Path MkvFile::mkvExtract(const string &si) {
         }
 
         debug << "[" << to_string(getpid()) << "] " << "#execvp mkvextract ERROR! " << to_string(errno) << endl;
-        error("mkvextract couldn'targetFile run", errno);
+        error("mkvextract couldn't run", errno);
     }
 
 #endif

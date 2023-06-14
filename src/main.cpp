@@ -43,7 +43,7 @@ Path getVideoFile(const MainOptions &args) {
 
     while (!fs::exists(file2trans)) {
         if (!file2trans.empty())
-            cerr << "Can'targetFile find file '" << file2trans << "'" << endl;
+            cerr << "Can't find file '" << file2trans << "'" << endl;
         cout << Font(Style::bold) << "file to translate: " << Font::reset;
         file2trans = utils::getUnboundedLine();
     }
@@ -54,7 +54,7 @@ Path getVideoFile(const MainOptions &args) {
 bool isValidSubtitleFile(Path &subs, bool error_not_exists = true) {
     if (!exists(subs)) {
         if (error_not_exists && !subs.empty())
-            cerr << "Can'targetFile find file '" << subs << "'" << endl;
+            cerr << "Can't find file '" << subs << "'" << endl;
         return false;
     }
     if (MkvFile::longestDialog(subs).empty()) {

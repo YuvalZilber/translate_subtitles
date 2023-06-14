@@ -25,7 +25,7 @@ void TranslatorLtrToRtl::translate() {
     } else
         trg.open(filename_trg, fstream::out);
     if (!trg) {
-        cerr << "Can'targetFile open target file: '" << filename_trg << "'" << endl;
+        cerr << "Can't open target file: '" << filename_trg << "'" << endl;
         cerr << "cwd+filename: '" << utils::pwd() << "/" << filename_trg << "'" << endl;
     }
 
@@ -148,9 +148,9 @@ void TranslatorLtrToRtl::translate() {
         src.close();
     } else {
         if (!src.is_open())
-            cerr << "couldn'targetFile open src '" << subtitleFile << "'" << endl;
+            cerr << "couldn't open src '" << subtitleFile << "'" << endl;
         if (!trg.is_open())
-            cerr << "couldn'targetFile open trg '" << filename_trg << "'" << endl;
+            cerr << "couldn't open trg '" << filename_trg << "'" << endl;
     }
     player.quit();
     cout << "bye!" << endl;
@@ -161,7 +161,7 @@ vector<int> TranslatorLtrToRtl::getTimeVector(const string &line, regex &time_pa
     regex_match(line, sm_time, time_pattern);
     string time_s = sm_time[3].str();
     if (!time_s.starts_with("0:")) {
-        cerr << "don'targetFile handle hours yet" << endl;
+        cerr << "don't handle hours yet" << endl;
         exit(1);
     }
     time_s[time_s.find('.')] = ':';
@@ -178,10 +178,52 @@ string TranslatorLtrToRtl::extractByTitlePattern(const string &line, const regex
 void TranslatorLtrToRtl::process_break_line(string &origin, string &translation) {
     translation = regex_replace(translation, regex(R"(\s*@\s*)"), " \\N");
     auto styles = regex(R"((\{(([^}])|(\}\{))*\}))");
+    bool autoPunctuation = !utils::endsWithPunctuation(translation);
+    bool allQuoted = false;
+    if (autoPunctuation) {
+        origin = regex_replace(origin, styles, "");
+        translation = breakLineIfNeeded(origin, translation);
+        translation = utils::trimRegex(translation, R"((\s|\\N)+)");
 
-    origin = regex_replace(origin, styles, "");
+        allQuoted = multiTrimQuotes(origin);
+        if (utils::endsWithPunctuation(origin)) {
+            translation += utils::getPunctuationAtEnd(origin);
+        }
+    }
+
+    translation = flipPunctuationIfNeeded(translation);
+
+    if (allQuoted)
+        translation = quoteAllLines(translation);
+
+}
+
+string TranslatorLtrToRtl::quoteAllLines(const string &translation) {
+    vector<string> lines = utils::split(translation, "\\N");
+    lines = utils::split(translation, "\\N");
+    string res;
+    for (int i = 0; i < lines.size(); i++) {
+        res += "\"" + lines[i] + "\"";
+        if (i < lines.size() - 1)
+            res += " \\N";
+    }
+    return res;
+}
+
+bool TranslatorLtrToRtl::multiTrimQuotes(string &origin) {
+    string rowSep = R"((?:(?:\s*)(?:\\[nN])(?:\s*)))";
+    bool allQuoted = regex_search(origin, regex("^\"(.*\"" + rowSep + "\")*.*\"$"));
+    if (allQuoted) {
+        origin = regex_replace(origin, regex("(^|" + rowSep + ")\""), "$1");
+        origin = regex_replace(origin, regex("\"($|" + rowSep + ")"), "$1");
+        origin = utils::trimRegex(origin, "\"");
+    }
+    return allQuoted;
+}
+
+string &TranslatorLtrToRtl::breakLineIfNeeded(const string &origin, string &translation) {
     size_t n = translation.length();
-    if (!translation.contains("\\N")) {
+    if (!translation.contains("\\N") && !regex_search(translation, regex("^\".*\"$"))) {
         if (translation.contains(" ")) {
             if (origin.contains("\\N") || origin.contains("\\n") || origin.contains("<br>")) {
                 vector<string> words = utils::split(translation);
@@ -197,31 +239,23 @@ void TranslatorLtrToRtl::process_break_line(string &origin, string &translation)
                     }
                 }
                 translation = res;
-
             }
         }
     }
-
-    translation = regex_replace(translation, regex(R"((^(\s|\\N)+)|((\s|\\N)+$))"), "");
-
-    if (utils::endsWithPunctuation(origin) && !utils::endsWithPunctuation(translation))
-        translation += utils::getPunctuationAtEnd(origin);
-
-    vector<string> lines = utils::split(translation, " \\N");
-    string res = flipPunctuationIfNeeded(n, lines);
-    translation = res;
+    return translation;
 }
 
 #pragma clang diagnostic push
 #pragma ide diagnostic ignored "Simplify"
 
-string TranslatorLtrToRtl::flipPunctuationIfNeeded(size_t n, const vector<string> &lines) {
+string TranslatorLtrToRtl::flipPunctuationIfNeeded(const string &translation) {
+    vector<string> lines = utils::split(translation, "\\N");
     string res;
+    size_t n;
     if (flip_punctuation) {
         for (int i = 0; i < lines.size(); i++) {
             string line = lines[i];
-
-            line = regex_replace(line, regex(R"((^\s+)|(\s+$))"), "");
+            line = utils::trimRegex(line, R"(\s+)");
 
             string prefix;
             while (line.starts_with('-') || line.starts_with('"')) {

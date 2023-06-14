@@ -15,8 +15,8 @@ namespace logger {
             log_file(filename) {
         FILE *f = fopen(filename.c_str(), "w+");
         if (!filename.empty() && !f)
-            cerr << "Couldn't open file '" + filename + "'";
-        else if(f)
+            cerr << "Couldn't open file '" + filename + "'" << endl;
+        else if (f)
             fclose(f);
     }
 
